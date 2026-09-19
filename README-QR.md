@@ -9,10 +9,20 @@
 - [验证记录及性能结论边界](research/learned_qr/docs/VERIFICATION.md)
 - [数据清单示例](research/learned_qr/configs/dataset.example.json)
 
+## Ubuntu / WSL 构建入口
+
+完整上游测试需要 BLAS/LAPACK 开发库；只编译 `rnx2rtkp` 不能代替这些测试。Windows 原生 DLL 尚未做全平台验收。
+
 ```bash
+sudo apt-get update
+sudo apt-get install -y build-essential cmake git python3-venv libblas-dev liblapack-dev
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j4
+python3 -m venv .venv
+. .venv/bin/activate
 python -m pip install -r research/learned_qr/requirements.txt
+ctest --test-dir build --output-on-failure
+(cd research/learned_qr && OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python -m pytest -q)
 python research/learned_qr/run_qr.py --help
 python research/learned_qr/run_qr.py train --manifest /path/dataset.json \
   --config research/learned_qr/configs/short-baseline.conf --output outputs/run01
@@ -21,3 +31,5 @@ python research/learned_qr/run_qr.py train --manifest /path/dataset.json \
 **方法边界：**训练是条件一阶 EKF 求导，局部 H、坐标旋转、因果特征及离散选择停止梯度；不是对全部 C 指令和整数搜索做自动微分。训练/桥接回放使用 Cholesky/Joseph 数值更新，必须同时比较“稳定核关闭学习”的基线，不能把数值核变化带来的增益算成学习增益。原生 `rnx2rtkp` 默认关闭学习且不启用稳定核时保留旧路径。
 
 验证使用仓库附带的真实格式 RINEX，训练链路测试中的参考标签是人工构造的；没有随仓库提供真实训练权重或定位改善结论。用户需在自己的独立训练、验证、测试路线中评估。
+
+GitHub Actions 常规验证使用只读权限，构建全部原生目标并运行原生和学习模块测试；测试输出在 `qr-validation` artifact，当前提交的源码包在 `qr-source` artifact。发布过程中使用的一次性传输文件已移除，用户不需要运行任何发布脚本。
