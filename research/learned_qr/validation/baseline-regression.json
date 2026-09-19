@@ -1,0 +1,20 @@
+{
+  "original": {
+    "epochs": 21,
+    "sha256_data_rows": "8cef5c93f84e4390b84bbdcf2e179a60f1eed06690e96271c0b6edda57220b7c"
+  },
+  "legacy_off": {
+    "epochs": 21,
+    "sha256_data_rows": "8cef5c93f84e4390b84bbdcf2e179a60f1eed06690e96271c0b6edda57220b7c"
+  },
+  "stable_off": {
+    "epochs": 21,
+    "sha256_data_rows": "b4fecad17bb29947005d1bf72cf1ed61d990ec8a74b9b697b4ff2148ad80ac67"
+  },
+  "identity": {
+    "epochs": 21,
+    "sha256_data_rows": "b4fecad17bb29947005d1bf72cf1ed61d990ec8a74b9b697b4ff2148ad80ac67"
+  },
+  "legacy_off_exact": true,
+  "stable_identity_exact": true
+}

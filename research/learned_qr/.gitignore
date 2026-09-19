@@ -5,3 +5,7 @@ __pycache__/
 *.o
 outputs/
 build/
+
+outputs/
+data/
+.venv/

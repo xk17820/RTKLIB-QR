@@ -98,6 +98,8 @@ static double ar_poly_coeffs[3][5] = {
     {6.42237302e-01, -8.39813962e+00,  2.92107285e+01, -2.37577308e+01, -1.14307128e+00},
     {-2.22600390e-02,  3.23169103e-01, -1.39837429e+00, 2.19282996e+00, -5.34583971e-02}};
 
+#include "learned_qr_adapter.h"
+#include "qr_filter.h"
 /* global variables ----------------------------------------------------------*/
 static int statlevel=0;          /* rtk status output level (0:off) */
 static FILE *fp_stat=NULL;       /* rtk status file pointer */
@@ -398,8 +400,8 @@ static double gfobs(const obsd_t *obs, int i, int j, int k, const nav_t *nav)
     return L1*CLIGHT/freq1-L2*CLIGHT/freq2;
 }
 /* single-differenced measurement error variance -----------------------------*/
-static double varerr(int sat, int sys, double el, double snr_rover, double snr_base,
-                     double bl, double dt, int f, const prcopt_t *opt, const obsd_t *obs)
+static double varerr(rtk_t *rtk, int sat, int sys, double el, double snr_rover, double snr_base,
+                     double bl, double dt, int f, const prcopt_t *opt, const obsd_t *obs, const obsd_t *baseobs)
 {
     (void)sat;
     double a,b,c,d,e;
@@ -443,7 +445,7 @@ static double varerr(int sat, int sys, double el, double snr_rover, double snr_b
     }
 
     var*=(opt->ionoopt==IONOOPT_IFLC)?SQR(3.0):1.0;
-    return var;
+    return qr_apply_r(rtk,sat,sys,el,snr_rover,snr_base,bl,dt,f,opt,obs,baseobs,var);
 }
 /* baseline length -----------------------------------------------------------*/
 static double baseline(const double *ru, const double *rb, double *dr)
@@ -460,6 +462,7 @@ static inline void initx(rtk_t *rtk, double xi, double var, int i)
     for (j=0;j<rtk->nx;j++) rtk->P[i+j*rtk->nx]=0.0;
     for (j=0;j<rtk->nx;j++) rtk->P[j+i*rtk->nx]=0.0;
     rtk->P[i+i*rtk->nx]=var;
+    qr_emit(rtk,QR_INIT,i,0,NULL,&xi,&var,NULL);
 }
 /* select common satellites between rover and reference station --------------*/
 static int selsat(const obsd_t *obs, double *azel, int nu, int nr,
@@ -494,6 +497,7 @@ static void udpos(rtk_t *rtk, double tt)
     }
     /* initialize position for first epoch */
     if (norm(rtk->x, 3) <= RE_WGS84 / 2) {
+        qr_rtk_reset(rtk->learned_qr);
         trace(3,"rr_init=");tracemat(3,rtk->sol.rr,1,6,15,6);
         for (i=0;i<3;i++) initx(rtk,rtk->sol.rr[i],VAR_POS,i);
         if (rtk->opt.dynamics) {
@@ -514,6 +518,7 @@ static void udpos(rtk_t *rtk, double tt)
     var/=3.0;
 
     if (var>VAR_POS) {
+        qr_rtk_reset(rtk->learned_qr);
         /* reset position with large variance */
         for (i=0;i<3;i++) initx(rtk,rtk->sol.rr[i],VAR_POS,i);
         for (i=3;i<6;i++) initx(rtk,rtk->sol.rr[i],VAR_VEL,i);
@@ -557,13 +562,22 @@ static void udpos(rtk_t *rtk, double tt)
             rtk->P[ix[i]+ix[j]*rtk->nx]=P[i+j*nx];
         }
     }
+    qr_emit(rtk,QR_TRANSITION,nx,0,ix,F,NULL,NULL);
     /* process noise added to only acceleration  P=P+Q */
     Q[0]=Q[4]=SQR(rtk->opt.prn[3])*fabs(tt);
     Q[8]=SQR(rtk->opt.prn[4])*fabs(tt);
+    qr_apply_q(rtk,tt,Q);
     ecef2pos(rtk->x,pos);
     covecef(pos,Q,Qv);
     for (i=0;i<3;i++) for (j=0;j<3;j++) {
         rtk->P[i+6+(j+6)*rtk->nx]+=Qv[i+j*3];
+    }
+    if (rtk->learned_qr && ((qr_rtk_context*)rtk->learned_qr)->callback) {
+        double qh[9]={0},qv[9]={0},bh[9],bv[9];
+        qh[0]=qh[4]=SQR(rtk->opt.prn[3])*fabs(tt);
+        qv[8]=SQR(rtk->opt.prn[4])*fabs(tt);
+        covecef(pos,qh,bh);covecef(pos,qv,bv);
+        qr_emit(rtk,QR_QADD,3,0,NULL,bh,bv,NULL);
     }
     free(ix); free(F); free(P); free(FP); free(x); free(xp);
 }
@@ -827,6 +841,7 @@ static void udbias(rtk_t *rtk, double tt, const obsd_t *obs, const int *sat,
 {
     double cp,pr,cp1,cp2,pr1,pr2,*bias,offset,freqi,freq1,freq2,C1,C2;
     int i,j,k,slip,rejc,reset,nf=NF(&rtk->opt),f2;
+    int qr_contributors[MAXSAT];
 
     trace(3,"udbias  : tt=%.3f ns=%d\n",tt,ns);
 
@@ -881,6 +896,8 @@ static void udbias(rtk_t *rtk, double tt, const obsd_t *obs, const int *sat,
         for (i=0;i<ns;i++) {
             j=IB(sat[i],k,&rtk->opt);
             rtk->P[j+j*rtk->nx]+=rtk->opt.prn[0]*rtk->opt.prn[0]*fabs(tt);
+            {double dn=SQR(rtk->opt.prn[0])*fabs(tt);
+             qr_emit(rtk,QR_DIAG,j,0,NULL,&dn,NULL,NULL);}
             slip=rtk->ssat[sat[i]-1].slip[k];
             rejc=rtk->ssat[sat[i]-1].rejc[k];
             if (rtk->opt.ionoopt==IONOOPT_IFLC) {
@@ -890,6 +907,7 @@ static void udbias(rtk_t *rtk, double tt, const obsd_t *obs, const int *sat,
             if (rtk->opt.modear==ARMODE_INST||(!(slip&LLI_SLIP)&&rejc<2)) continue;
             /* reset phase-bias state if detecting cycle slip or outlier */
             rtk->x[j]=0.0;
+            qr_emit(rtk,QR_ZERO,j,0,NULL,NULL,NULL,NULL);
             rtk->ssat[sat[i]-1].rejc[k]=0;
             rtk->ssat[sat[i]-1].lock[k]=-rtk->opt.minlock;
             /* retain icbiases for GLONASS sats */
@@ -926,11 +944,22 @@ static void udbias(rtk_t *rtk, double tt, const obsd_t *obs, const int *sat,
             }
             if (rtk->x[IB(sat[i],k,&rtk->opt)]!=0.0) {
                 offset+=bias[i]-rtk->x[IB(sat[i],k,&rtk->opt)];
+                qr_contributors[j]=IB(sat[i],k,&rtk->opt);
                 j++;
             }
         }
         /* correct phase-bias offset to ensure phase-code coherency */
         if (j>0) {
+            /* Derivative of native ambiguity common-offset correction. The
+             * covariance intentionally remains unchanged, matching upstream. */
+            if (rtk->learned_qr && ((qr_rtk_context*)rtk->learned_qr)->callback) {
+                int ids[2*MAXSAT],na=0,nc=0,l;
+                double mean=offset/j;
+                for(l=1;l<=MAXSAT;l++)
+                    if(rtk->x[IB(l,k,&rtk->opt)]!=0.0) ids[na++]=IB(l,k,&rtk->opt);
+                for(l=0;l<j;l++) ids[na+nc++]=qr_contributors[l];
+                qr_emit(rtk,QR_OFFSET,na,nc,ids,&mean,NULL,NULL);
+            }
             for (i=1;i<=MAXSAT;i++) {
                 if (rtk->x[IB(i,k,&rtk->opt)]!=0.0) rtk->x[IB(i,k,&rtk->opt)]+=offset/j;
             }
@@ -1286,10 +1315,10 @@ static int ddres(rtk_t *rtk, const obsd_t *obs, double dt, const double *x,
                 if (rtk->ssat[sat[j]-1].slip[frq]&LLI_SLIP) continue;
                 if (rtk->ssat[sat[j]-1].lock[frq]<0) continue;
 
-                refvar=varerr(sat[j],sysj,azel[1+iu[j]*2],
+                refvar=varerr(rtk,sat[j],sysj,azel[1+iu[j]*2],
                               rtk->ssat[sat[j]-1].snr_rover[frq],
                               rtk->ssat[sat[j]-1].snr_base[frq],
-                              bl,dt,f,opt,&obs[iu[j]]);
+                              bl,dt,f,opt,&obs[iu[j]],&obs[ir[j]]);
                 if (i<0||refvar<minvar) {
                     i=j;
                     minvar=refvar;
@@ -1305,10 +1334,10 @@ static int ddres(rtk_t *rtk, const obsd_t *obs, double dt, const double *x,
                     if (!test_sys(sysj,m)||sysj==SYS_SBS) continue;
                     if (!validobs(iu[j],ir[j],f,nf,y)) continue;
             
-                    refvar=varerr(sat[j],sysj,azel[1+iu[j]*2],
+                    refvar=varerr(rtk,sat[j],sysj,azel[1+iu[j]*2],
                                   rtk->ssat[sat[j]-1].snr_rover[frq],
                                   rtk->ssat[sat[j]-1].snr_base[frq],
-                                  bl,dt,f,opt,&obs[iu[j]]);
+                                  bl,dt,f,opt,&obs[iu[j]],&obs[ir[j]]);
                     if (i<0||refvar<minvar) {
                         i=j;
                         minvar=refvar;
@@ -1433,14 +1462,14 @@ static int ddres(rtk_t *rtk, const obsd_t *obs, double dt, const double *x,
                 }
 
                 /* single-differenced measurement error variances (m) */
-                Ri[nv] = varerr(sat[i], sysi, azel[1+iu[i]*2],
+                Ri[nv] = varerr(rtk,sat[i], sysi, azel[1+iu[i]*2],
                                 rtk->ssat[sat[i]-1].snr_rover[frq],
                                 rtk->ssat[sat[i]-1].snr_base[frq],
-                                bl,dt,f,opt,&obs[iu[i]]);
-                Rj[nv] = varerr(sat[j], sysj, azel[1+iu[j]*2],
+                                bl,dt,f,opt,&obs[iu[i]],&obs[ir[i]]);
+                Rj[nv] = varerr(rtk,sat[j], sysj, azel[1+iu[j]*2],
                                 rtk->ssat[sat[j]-1].snr_rover[frq],
                                 rtk->ssat[sat[j]-1].snr_base[frq],
-                                bl,dt,f,opt,&obs[iu[j]]);
+                                bl,dt,f,opt,&obs[iu[j]],&obs[ir[j]]);
                 /* increase variance if half cycle flags set */
                 if (!code&&(obs[iu[i]].LLI[frq]&LLI_HALFC)) Ri[nv]+=0.01;
                 if (!code&&(obs[iu[j]].LLI[frq]&LLI_HALFC)) Rj[nv]+=0.01;
@@ -2129,6 +2158,7 @@ static int relpos(rtk_t *rtk, const obsd_t *obs, int nu, int nr,
     /* update kalman filter states (pos,vel,acc,ionosp, troposp, sat phase biases) */
     trace(4,"before udstate: x="); tracemat(4,rtk->x,1,NR(opt),13,4);
     udstate(rtk,obs,sat,iu,ir,ns,nav);
+    qr_emit(rtk,QR_PRIOR,0,0,NULL,NULL,NULL,NULL);
     trace(4,"after udstate x="); tracemat(4,rtk->x,1,NR(opt),13,4);
 
     for (i=0;i<ns;i++) for (j=0;j<nf;j++) {
@@ -2188,7 +2218,10 @@ static int relpos(rtk_t *rtk, const obsd_t *obs, int nu, int nr,
                 xp=x+K*v
                 Pp=(I-K*H')*P                  */
         trace(3,"before filter x=");tracemat(3,rtk->x,1,NP(opt),13,6);
-        if ((info=filter(xp,Pp,H,v,R,rtk->nx,nv))) {
+        qr_filter_event(rtk,xp,Pp,H,v,R,vflg,nv);
+        if ((info=(rtk->learned_qr && ((qr_rtk_context*)rtk->learned_qr)->stable)?
+                   qr_stable_filter(xp,Pp,H,v,R,rtk->nx,nv):
+                   filter(xp,Pp,H,v,R,rtk->nx,nv))) {
             errmsg(rtk,"filter error (info=%d)\n",info);
             stat=SOLQ_NONE;
             break;
@@ -2208,6 +2241,7 @@ static int relpos(rtk_t *rtk, const obsd_t *obs, int nu, int nr,
             /* copy states */
             matcpy(rtk->x,xp,rtk->nx,1);
             matcpy(rtk->P,Pp,rtk->nx,rtk->nx);
+            qr_emit(rtk,QR_ACCEPT,0,0,NULL,NULL,NULL,NULL);
 
             /* update valid satellite status for ambiguity control */
             rtk->sol.ns=0;
@@ -2355,6 +2389,7 @@ extern void rtkinit(rtk_t *rtk, const prcopt_t *opt)
     rtk->initial_mode=rtk->opt.mode;
     rtk->sol.thres=(float)opt->thresar[0];
     rtk->intpres_nb=0;
+    rtk->learned_qr=qr_rtk_create();
 }
 /* free rtk control ------------------------------------------------------------
 * free memory for rtk control struct
@@ -2365,6 +2400,8 @@ extern void rtkfree(rtk_t *rtk)
 {
     trace(3,"rtkfree :\n");
 
+    qr_rtk_destroy(rtk->learned_qr);
+    rtk->learned_qr=NULL;
     rtk->nx=rtk->na=0;
     free(rtk->x ); rtk->x =NULL;
     free(rtk->P ); rtk->P =NULL;

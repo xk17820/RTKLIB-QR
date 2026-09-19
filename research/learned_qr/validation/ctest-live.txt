@@ -1,0 +1,116 @@
+Internal ctest changing into directory: /mnt/data/RTKLIB-QR-work/build
+Test project /mnt/data/RTKLIB-QR-work/build
+      Start  1: convbin_test1
+ 1/55 Test  #1: convbin_test1 ....................   Passed    0.01 sec
+      Start  2: convbin_test2
+ 2/55 Test  #2: convbin_test2 ....................   Passed    0.01 sec
+      Start  3: convbin_test3
+ 3/55 Test  #3: convbin_test3 ....................   Passed    0.01 sec
+      Start  4: convbin_test4
+ 4/55 Test  #4: convbin_test4 ....................   Passed    0.01 sec
+      Start  5: convbin_test5
+ 5/55 Test  #5: convbin_test5 ....................   Passed    0.01 sec
+      Start  6: convbin_test7
+ 6/55 Test  #6: convbin_test7 ....................   Passed    0.02 sec
+      Start  7: convbin_test8
+ 7/55 Test  #7: convbin_test8 ....................   Passed    0.01 sec
+      Start  8: convbin_test9
+ 8/55 Test  #8: convbin_test9 ....................   Passed    0.01 sec
+      Start  9: convbin_test10
+ 9/55 Test  #9: convbin_test10 ...................   Passed    0.01 sec
+      Start 10: convbin_test11
+10/55 Test #10: convbin_test11 ...................   Passed    0.03 sec
+      Start 11: convbin_test12
+11/55 Test #11: convbin_test12 ...................   Passed    0.02 sec
+      Start 12: convbin_test13
+12/55 Test #12: convbin_test13 ...................   Passed    0.03 sec
+      Start 13: convbin_test14
+13/55 Test #13: convbin_test14 ...................   Passed    0.02 sec
+      Start 14: convbin_test15
+14/55 Test #14: convbin_test15 ...................   Passed    0.02 sec
+      Start 15: convbin_test16
+15/55 Test #15: convbin_test16 ...................   Passed    0.03 sec
+      Start 16: convbin_test17
+16/55 Test #16: convbin_test17 ...................   Passed    0.03 sec
+      Start 17: convbin_test18
+17/55 Test #17: convbin_test18 ...................   Passed    0.03 sec
+      Start 18: rnx2rtkp_test1
+18/55 Test #18: rnx2rtkp_test1 ...................   Passed    0.01 sec
+      Start 19: rnx2rtkp_test2
+19/55 Test #19: rnx2rtkp_test2 ...................   Passed    0.01 sec
+      Start 20: rnx2rtkp_test3
+20/55 Test #20: rnx2rtkp_test3 ...................   Passed    0.01 sec
+      Start 21: rnx2rtkp_test4
+21/55 Test #21: rnx2rtkp_test4 ...................   Passed    0.08 sec
+      Start 22: rnx2rtkp_test5
+22/55 Test #22: rnx2rtkp_test5 ...................   Passed    0.04 sec
+      Start 23: rnx2rtkp_test6
+23/55 Test #23: rnx2rtkp_test6 ...................   Passed    0.03 sec
+      Start 24: rnx2rtkp_test7
+24/55 Test #24: rnx2rtkp_test7 ...................   Passed    0.03 sec
+      Start 25: rnx2rtkp_test8
+25/55 Test #25: rnx2rtkp_test8 ...................   Passed    0.04 sec
+      Start 26: rnx2rtkp_test9
+26/55 Test #26: rnx2rtkp_test9 ...................   Passed    0.01 sec
+      Start 27: rnx2rtkp_test10
+27/55 Test #27: rnx2rtkp_test10 ..................   Passed    0.01 sec
+      Start 28: rnx2rtkp_test11
+28/55 Test #28: rnx2rtkp_test11 ..................   Passed    0.01 sec
+      Start 29: rnx2rtkp_test12
+29/55 Test #29: rnx2rtkp_test12 ..................   Passed    0.01 sec
+      Start 30: rnx2rtkp_test13
+30/55 Test #30: rnx2rtkp_test13 ..................   Passed    0.01 sec
+      Start 31: rnx2rtkp_test14
+31/55 Test #31: rnx2rtkp_test14 ..................   Passed    0.01 sec
+      Start 32: rnx2rtkp_test15
+32/55 Test #32: rnx2rtkp_test15 ..................   Passed    0.01 sec
+      Start 33: rnx2rtkp_test16
+33/55 Test #33: rnx2rtkp_test16 ..................   Passed    0.01 sec
+      Start 34: rnx2rtkp_test17
+34/55 Test #34: rnx2rtkp_test17 ..................   Passed    0.04 sec
+      Start 35: rnx2rtkp_test18
+35/55 Test #35: rnx2rtkp_test18 ..................   Passed    0.07 sec
+      Start 36: rnx2rtkp_test19
+36/55 Test #36: rnx2rtkp_test19 ..................   Passed    0.04 sec
+      Start 37: rnx2rtkp_test20
+37/55 Test #37: rnx2rtkp_test20 ..................   Passed    0.07 sec
+      Start 38: rnx2rtkp_test21
+38/55 Test #38: rnx2rtkp_test21 ..................   Passed    0.07 sec
+      Start 39: rnx2rtkp_test22
+39/55 Test #39: rnx2rtkp_test22 ..................   Passed    0.08 sec
+      Start 40: rnx2rtkp_test23
+40/55 Test #40: rnx2rtkp_test23 ..................   Passed    0.09 sec
+      Start 41: rnx2rtkp_test24
+41/55 Test #41: rnx2rtkp_test24 ..................   Passed    0.11 sec
+      Start 42: rnx2rtkp_test25
+42/55 Test #42: rnx2rtkp_test25 ..................   Passed    0.15 sec
+      Start 43: matrix_test
+43/55 Test #43: matrix_test ......................   Passed    0.00 sec
+      Start 44: time_test
+44/55 Test #44: time_test ........................   Passed    0.01 sec
+      Start 45: coord_test
+45/55 Test #45: coord_test .......................   Passed    0.05 sec
+      Start 46: rinex_test
+46/55 Test #46: rinex_test .......................   Passed    0.02 sec
+      Start 47: lambda_test
+47/55 Test #47: lambda_test ......................   Passed    0.00 sec
+      Start 48: atmos_test
+48/55 Test #48: atmos_test .......................   Passed    0.00 sec
+      Start 49: misc_test
+49/55 Test #49: misc_test ........................   Passed    0.00 sec
+      Start 50: preceph_test
+50/55 Test #50: preceph_test .....................   Passed    0.15 sec
+      Start 51: gloeph_test
+51/55 Test #51: gloeph_test ......................   Passed    0.09 sec
+      Start 52: geoid_test
+52/55 Test #52: geoid_test .......................   Passed    0.11 sec
+      Start 53: ppp_test
+53/55 Test #53: ppp_test .........................   Passed    0.00 sec
+      Start 54: ionex_test
+54/55 Test #54: ionex_test .......................   Passed    0.10 sec
+      Start 55: tlr_test
+55/55 Test #55: tlr_test .........................   Passed    0.03 sec
+
+100% tests passed, 0 tests failed out of 55
+
+Total Test time (real) =   1.90 sec

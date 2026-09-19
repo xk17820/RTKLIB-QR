@@ -1,0 +1,8 @@
+{
+  "train": [
+    {"id": "train_route_01", "rover": "data/train01/rover.obs", "base": "data/train01/base.obs", "nav": ["data/train01/brdc.nav"], "reference": "data/train01/reference.csv", "reference_max_gap_s": 1.0, "reference_time_offset_s": 0.0}
+  ],
+  "validation": [
+    {"id": "validation_route_01", "rover": "data/validation01/rover.obs", "base": "data/validation01/base.obs", "nav": ["data/validation01/brdc.nav"], "reference": "data/validation01/reference.csv", "reference_max_gap_s": 1.0, "reference_time_offset_s": 0.0}
+  ]
+}

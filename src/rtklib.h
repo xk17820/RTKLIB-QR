@@ -1243,6 +1243,7 @@ typedef struct {        /* RTK control/result type */
     int intpres_nb;     /* Time interpolation of residuals, number of previous base observations */
     int vtec_used;      /* indicates VTEC coeffs have been used to init ion states */
     obsd_t intpres_obsb[MAXOBS]; /* Time interpolation of residuals, previous base observations */
+    void *learned_qr; /* per-filter QR context; rebuild ALL dependent binaries */
 } rtk_t;
 
 typedef struct {        /* receiver raw data control type */
