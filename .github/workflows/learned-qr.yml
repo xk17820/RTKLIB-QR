@@ -22,8 +22,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install test dependencies
+      - name: Install native and Python test dependencies
         run: |
+          sudo apt-get update
+          sudo apt-get install -y libblas-dev liblapack-dev
           python -m pip install numpy pytest
           python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
       - name: Apply checksum-pinned tested source
