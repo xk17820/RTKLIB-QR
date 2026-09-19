@@ -25,9 +25,11 @@ jobs:
           sudo apt-get install -y libblas-dev liblapack-dev
           python -m pip install numpy pytest
           python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
-      - name: Build all native targets including learned QR bridge
+      - name: Build all native targets with test assertions enabled
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_FLAGS_RELEASE='-O3 -UNDEBUG' \
+            -DCMAKE_CXX_FLAGS_RELEASE='-O3 -UNDEBUG'
           cmake --build build -j2
       - name: Upstream native test suite
         run: ctest --test-dir build --output-on-failure --output-log /tmp/qr-ctest.txt
