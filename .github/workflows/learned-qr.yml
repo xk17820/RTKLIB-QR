@@ -1,4 +1,4 @@
-name: Learned QR validation
+name: Learned QR validation and WIP handoff
 on:
   push:
     branches: [research/learned-qr]
@@ -9,7 +9,7 @@ jobs:
   validate:
     if: github.repository == 'xk17820/RTKLIB-QR' && github.ref == 'refs/heads/research/learned-qr'
     permissions:
-      contents: write
+      contents: write # Only the guarded one-time archive step writes this research branch.
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
@@ -27,38 +27,70 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install native and Python test dependencies
+      - name: Materialize exact pending source for user-requested WIP archive
+        id: recover
+        if: hashFiles('.scl-publication/manifest.json') != ''
+        run: python research/learned_qr/handoff/2026-09-20/archive_snapshot.py apply
+      - name: Install dependencies
+        id: dependencies
+        continue-on-error: true
         run: |
           sudo apt-get update
           sudo apt-get install -y libblas-dev liblapack-dev
           python -m pip install numpy pytest
           python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
-      - name: Apply checksum-verified SCL source
-        if: hashFiles('.scl-publication/install.py') != ''
-        run: python .scl-publication/install.py apply
-      - name: Build native solver and bridge with assertions enabled
+          mkdir -p research/learned_qr/handoff/2026-09-20/evidence
+          python -c 'import sys,platform,torch,numpy,pytest; print(platform.platform()); print(sys.version); print("torch",torch.__version__,"numpy",numpy.__version__,"pytest",pytest.__version__)' > research/learned_qr/handoff/2026-09-20/evidence/environment.txt
+      - name: Build all native targets with assertions enabled
+        id: build
+        if: steps.dependencies.outcome == 'success'
+        continue-on-error: true
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS_RELEASE='-O2 -UNDEBUG'
-          cmake --build build -j2
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS_RELEASE='-O2 -UNDEBUG' -DCMAKE_CXX_FLAGS_RELEASE='-O2 -UNDEBUG' 2>&1 | tee research/learned_qr/handoff/2026-09-20/evidence/configure.txt
+          cmake --build build -j2 2>&1 | tee research/learned_qr/handoff/2026-09-20/evidence/build.txt
       - name: Upstream native tests
-        run: ctest --test-dir build --output-on-failure | tee /tmp/scl-ctest.txt
-      - name: Learned covariance and native gradient regression tests
+        id: ctest
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
+        run: ctest --test-dir build --output-on-failure 2>&1 | tee research/learned_qr/handoff/2026-09-20/evidence/ctest.txt
+      - name: Learned covariance and native gradient tests
+        id: pytest
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
         working-directory: research/learned_qr
-        run: python -m pytest -q | tee /tmp/scl-pytest.txt
-      - uses: actions/upload-artifact@v4
-        with:
-          name: scl-validation
-          path: /tmp/scl-*.txt
-          retention-days: 14
-      - name: Publish verified source only to approved research branch
-        if: hashFiles('.scl-publication/install.py') != ''
+        run: python -m pytest -q 2>&1 | tee handoff/2026-09-20/evidence/pytest.txt
+      - name: Record checks without converting failures into success
+        if: always()
         env:
-          PUBLISH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python .scl-publication/install.py publish
-      - name: Archive source
-        run: git archive --format=tar.gz -o /tmp/scl-source.tar.gz HEAD
+          DEPENDENCIES_OUTCOME: ${{ steps.dependencies.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          CTEST_OUTCOME: ${{ steps.ctest.outcome }}
+          PYTEST_OUTCOME: ${{ steps.pytest.outcome }}
+        run: python research/learned_qr/handoff/2026-09-20/archive_snapshot.py record
+      - name: Save unfinished source and evidence, never a deployment approval
+        if: always() && steps.recover.outcome == 'success'
+        env:
+          SNAPSHOT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python research/learned_qr/handoff/2026-09-20/archive_snapshot.py publish
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: scl-source
-          path: /tmp/scl-source.tar.gz
-          retention-days: 14
+          name: scl-handoff-evidence
+          path: |
+            research/learned_qr/handoff/2026-09-20/evidence
+            research/learned_qr/handoff/2026-09-20/SNAPSHOT_STATUS.json
+          retention-days: 30
+      - name: Archive committed source
+        if: always()
+        run: git archive --format=tar.gz -o /tmp/scl-handoff-source.tar.gz HEAD
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scl-handoff-source
+          path: /tmp/scl-handoff-source.tar.gz
+          retention-days: 30
+      - name: Keep validation red when any check failed
+        if: always() && (steps.dependencies.outcome != 'success' || steps.build.outcome != 'success' || steps.ctest.outcome != 'success' || steps.pytest.outcome != 'success')
+        run: |
+          echo 'Research work was archived, not declared passing. Read HANDOFF.md and SNAPSHOT_STATUS.json.'
+          exit 1
