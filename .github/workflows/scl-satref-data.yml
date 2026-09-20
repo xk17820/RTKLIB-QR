@@ -1,0 +1,100 @@
+name: SCL SatRef internal research transfer
+on:
+  push:
+    branches: [research/learned-qr]
+    paths: ['.github/workflows/scl-satref-data.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  acquire:
+    if: github.repository == 'xk17820/RTKLIB-QR' && github.ref == 'refs/heads/research/learned-qr'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install hatanaka==2.8.1 cryptography
+      - name: Obtain official base observations and encrypt for research workspace
+        shell: bash
+        run: |
+          mkdir -p transfer
+          python - <<'PY'
+          import hashlib, io, json, os, pathlib, re, sys, time, urllib.request, urllib.parse, zipfile
+          import hatanaka
+          from cryptography.hazmat.primitives import hashes, serialization
+          from cryptography.hazmat.primitives.asymmetric import padding
+          from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+          public_key = b'''-----BEGIN PUBLIC KEY-----
+          MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEApEfFsulYoL9SljbRdJsd
+          0jsGYtr7tYYMj1hFm/HIPXgNaysyR7/x4tNjaz9hwraCrBt4lCm76SW5zKpkuk3c
+          RpQgutQK3i8kgnZ/iTQ0miJCupkNBloBri5s20CADHyBipcW0keCTQpFQEyYBY4h
+          3AhfaQkE2ZcHtNewIxHlZFRnhLdgCopbQSuuSo9Rs8DQ4vWXnQGukJ/RBpM5Vgld
+          jc3odC+HUGkmWQRYWxNPk9vK1CMOrOa4I/1k0v7iER1/AR8OxAgbvwokUIoEMsAA
+          v3v+f0BLVlQAuiQdPkjjI9wm0WuKEDTBLmiIXhIS9wsTPfpd3fmzTWcO83OldYMA
+          oRmhj6q+AmKkgVuQhfv/4Shn177Ij4SQnNYuGbobTBL9nlN0pA7f/nQwJxEv6Fh7
+          kAK6tiqw1EugJP6hNnyx+5S9THIo+W0IIIfDBIcl72yWVPWh3EyfPmmtrUx0awbv
+          G7XP+iJcSbdwtWNl5ziwCtuaQfVZiNUAuclg+kxrrNSjAgMBAAE=
+          -----END PUBLIC KEY-----
+          '''
+          report={'purpose':'personal non-commercial internal research; raw SatRef data must not be redistributed',
+                  'terms_url':'https://www.geodetic.gov.hk/en/rinex/downv.aspx',
+                  'provider':'Hong Kong Lands Department SatRef', 'station':'HKSC',
+                  'download_success':False,'started_unix_s':time.time(),'files':[],'listings':[]}
+          out=pathlib.Path('transfer');payload=io.BytesIO()
+          def get(url,limit=100*1024**2):
+              request=urllib.request.Request(url,headers={'User-Agent':'RTKLIB-QR-personal-research/1.0'})
+              with urllib.request.urlopen(request,timeout=120) as response:
+                  b=response.read(limit+1)
+                  if len(b)>limit:raise ValueError('transfer exceeds file ceiling')
+                  return b
+          try:
+              with zipfile.ZipFile(payload,'w',compression=zipfile.ZIP_DEFLATED) as z:
+                  for doy,hours in [(137,[2]),(138,[3,4,7]),(141,[6])]:
+                      root=f'https://rinex.geodetic.gov.hk/rinex3/2021/{doy}/hksc/'
+                      selected=[]
+                      for directory,kind in [(root,'navigation'),(root+'1s/','observation')]:
+                          html=get(directory,2*1024**2).decode('utf-8','replace')
+                          links=[urllib.parse.urljoin(directory,ref) for ref in re.findall(r'href=[\"\x27]([^\"\x27]+)',html,re.I)]
+                          links=sorted(set(x for x in links if x.startswith(root) and x.lower().endswith('.gz')))
+                          report['listings'].append({'url':directory,'files':[x.rsplit('/',1)[-1] for x in links]})
+                          if kind=='navigation':
+                              selected.extend((url,kind) for url in links if re.search(r'_01D_[GRECJ]N\.rnx\.gz$',url,re.I))
+                          else:
+                              for hour in hours:
+                                  match=[url for url in links if re.search(fr'_2021{doy:03d}{hour:02d}00_01H_01S_MO\.(crx|rnx)\.gz$',url,re.I)]
+                                  if len(match)!=1:raise ValueError(f'expected exactly one official observation file for DOY{doy} hour{hour}; found {len(match)}')
+                                  selected.extend((url,kind) for url in match)
+                      if not any(kind=='navigation' for _,kind in selected):raise ValueError('no broadcast navigation files in official listing')
+                      for url,kind in selected:
+                          raw=get(url);data=hatanaka.decompress(raw)
+                          if b'RINEX VERSION / TYPE' not in data[:200]:raise ValueError('invalid decoded RINEX header')
+                          name=f'{doy}/'+url.rsplit('/',1)[-1].replace('.crx.gz','.obs').replace('.rnx.gz','.nav' if kind=='navigation' else '.obs')
+                          z.writestr(name,data)
+                          report['files'].append({'url':url,'path':name,'kind':kind,'download_bytes':len(raw),'download_sha256':hashlib.sha256(raw).hexdigest(),'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()})
+                  report['download_success']=True
+                  z.writestr('ACQUISITION.json',json.dumps(report,indent=2))
+              key=AESGCM.generate_key(bit_length=256);nonce=os.urandom(12)
+              ciphertext=AESGCM(key).encrypt(nonce,payload.getvalue(),b'SCL-SatRef-internal-research-v1')
+              pub=serialization.load_pem_public_key(public_key)
+              wrapped=pub.encrypt(key,padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA256()),algorithm=hashes.SHA256(),label=None))
+              (out/'transfer.encrypted').write_bytes(ciphertext)
+              (out/'wrapped_key.bin').write_bytes(wrapped)
+              (out/'nonce.hex').write_text(nonce.hex())
+              report['encrypted_payload_sha256']=hashlib.sha256(ciphertext).hexdigest()
+              report['encrypted_payload_bytes']=len(ciphertext)
+          except Exception as e:report.update(download_success=False,error_type=type(e).__name__,error=str(e))
+          finally:
+              report['finished_unix_s']=time.time()
+              (out/'ACQUISITION.json').write_text(json.dumps(report,indent=2)+'\n')
+              print(json.dumps(report,indent=2))
+          if not report['download_success']:sys.exit(1)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scl-satref-encrypted-transfer
+          path: transfer/
+          retention-days: 3
+          compression-level: 0
