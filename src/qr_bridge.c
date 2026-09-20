@@ -13,7 +13,7 @@ typedef struct {
     prcopt_t opt;
     rtk_t rtk;
     qr_model model;
-    int mode,loaded,training,initialized,failed,first,stable;
+    int mode,loaded,training,initialized,failed,first,stable,observe_candidates,observe_fixed,rpolicy;
     int *ri,*bi,nr,nb,cursor;
     double max_gap,pair_age;
     gtime_t previous;
@@ -47,6 +47,8 @@ static int qr_new_filter(qr_session *s)
     c->r=(qr_history*)calloc(MAXSAT*2*NFREQ,sizeof(qr_history));
     if(!c->r) {free(c);return 0;}
     c->mode=s->mode;c->loaded=s->loaded;c->model=s->model;c->stable=s->stable;
+    c->observe_candidates=s->observe_candidates;c->observe_fixed=s->observe_fixed;
+    if(!s->loaded)c->model.rpolicy=s->rpolicy;
     c->model.max_gap=s->max_gap;s->rtk.learned_qr=c;
     s->first=1;
     return 1;
@@ -59,6 +61,33 @@ EXPORT int qr_set_stable(void *session,int enabled)
     s->stable=enabled!=0;
     if(s->initialized && s->rtk.learned_qr)
         ((qr_rtk_context*)s->rtk.learned_qr)->stable=s->stable;
+    return 0;
+}
+EXPORT int qr_set_learning_options(void *session,int policy,int candidates,int fixed)
+{
+    qr_session *s=(qr_session*)session;qr_rtk_context *c;
+    if(!s || policy<0 || policy>3 || s->cursor!=0)return -1;
+    s->rpolicy=policy;s->observe_candidates=candidates;s->observe_fixed=fixed;
+    c=(qr_rtk_context*)s->rtk.learned_qr;c->observe_candidates=candidates;c->observe_fixed=fixed;
+    if(!s->loaded)c->model.rpolicy=policy;
+    return 0;
+}
+/* Replace weights at an epoch boundary WITHOUT resetting the filter or history.
+ * A NULL path selects live Python inference, preserving the last model schema. */
+EXPORT int qr_reload_model(void *session,const char *path,int allow_test,int candidates,
+    char *error,int error_size)
+{
+    qr_session *s=(qr_session*)session;qr_rtk_context *c;qr_model m;int i;
+    if(!s || s->failed)return qr_error(error,error_size,"invalid reload session");
+    c=(qr_rtk_context*)s->rtk.learned_qr;
+    if(path && *path){
+        if(!qr_load(&m,path,allow_test) || fabs(m.max_gap-s->max_gap)>1e-9)
+            return qr_error(error,error_size,"reload model/schema/gap invalid");
+        s->model=m;s->rpolicy=m.rpolicy;s->loaded=1;c->model=m;c->loaded=1;
+    }else{s->loaded=0;c->loaded=0;c->model.rpolicy=s->rpolicy;}
+    s->observe_candidates=candidates;c->observe_candidates=candidates;
+    c->q.cached_valid=0;
+    for(i=0;i<MAXSAT*2*NFREQ;i++)c->r[i].cached_valid=0;
     return 0;
 }
 EXPORT void qr_close(void *session)

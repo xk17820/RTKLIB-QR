@@ -1,0 +1,690 @@
+[  1%] Building C object test/utest/CMakeFiles/t_matrix.dir/t_matrix.c.o
+[  1%] Building C object src/CMakeFiles/rtklib.dir/convgpx.c.o
+[  2%] Building C object test/utest/CMakeFiles/t_matrix.dir/__/__/src/rtkcmn.c.o
+[  3%] Building C object src/CMakeFiles/rtklib.dir/convkml.c.o
+[  4%] Building C object src/CMakeFiles/rtklib.dir/convrnx.c.o
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c: In function ‘satno2id’:
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:39: warning: ‘%02d’ directive output may be truncated writing between 2 and 11 bytes into a region of size 7 [-Wformat-truncation=]
+  518 |         case SYS_LEO: snprintf(id,8,"L%02d",prn-MINPRNLEO+1); return;
+      |                                       ^~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:37: note: directive argument in the range [-2147483647, 2147483647]
+  518 |         case SYS_LEO: snprintf(id,8,"L%02d",prn-MINPRNLEO+1); return;
+      |                                     ^~~~~~~
+In file included from /usr/include/stdio.h:980,
+                 from /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtklib.h:36,
+                 from /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:157:
+In function ‘snprintf’,
+    inlined from ‘satno2id’ at /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:23:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 4 and 13 bytes into a destination of size 8
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c: In function ‘satno2id’:
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:39: warning: ‘%02d’ directive output may be truncated writing between 2 and 11 bytes into a region of size 7 [-Wformat-truncation=]
+  515 |         case SYS_QZS: snprintf(id,8,"J%02d",prn-MINPRNQZS+1); return;
+      |                                       ^~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:37: note: directive argument in the range [-2147483648, 2147483455]
+  515 |         case SYS_QZS: snprintf(id,8,"J%02d",prn-MINPRNQZS+1); return;
+      |                                     ^~~~~~~
+In function ‘snprintf’,
+    inlined from ‘satno2id’ at /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:23:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 4 and 13 bytes into a destination of size 8
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+[  4%] Building C object src/CMakeFiles/rtklib.dir/datum.c.o
+[  5%] Building C object src/CMakeFiles/rtklib.dir/download.c.o
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/download.c: In function ‘test_local’:
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/download.c:575:26: warning: ‘%s’ directive writing up to 1023 bytes into a region of size 1022 [-Wformat-overflow=]
+  575 |         sprintf(str,"%s->%s",path,local);
+      |                          ^~       ~~~~~
+In file included from /usr/include/stdio.h:980,
+                 from /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtklib.h:36,
+                 from /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/download.c:22:
+In function ‘sprintf’,
+    inlined from ‘test_local’ at /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/download.c:575:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:30:10: note: ‘__builtin___sprintf_chk’ output 3 or more bytes (assuming 1026) into a destination of size 1024
+   30 |   return __builtin___sprintf_chk (__s, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   31 |                                   __glibc_objsize (__s), __fmt,
+      |                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   32 |                                   __va_arg_pack ());
+      |                                   ~~~~~~~~~~~~~~~~~
+[  6%] Building C object src/CMakeFiles/rtklib.dir/ephemeris.c.o
+[  6%] Building C object src/CMakeFiles/rtklib.dir/geoid.c.o
+[  6%] Building C object test/utest/CMakeFiles/t_matrix.dir/__/__/src/trace.c.o
+[  7%] Building C object test/utest/CMakeFiles/t_matrix.dir/__/__/src/preceph.c.o
+[  8%] Building C object src/CMakeFiles/rtklib.dir/gis.c.o
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/gis.c: In function ‘gis_read_record’:
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/gis.c:289:17: warning: ignoring return value of ‘fread’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  289 |                 fread(buff,1,1,fp);
+      |                 ^~~~~~~~~~~~~~~~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/gis.c: In function ‘read_poly’:
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/gis.c:143:9: warning: ignoring return value of ‘fread’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  143 |         fread(buff,4,1,fp);
+      |         ^~~~~~~~~~~~~~~~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/gis.c: In function ‘read_polygon’:
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/gis.c:206:9: warning: ignoring return value of ‘fread’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  206 |         fread(buff,4,1,fp);
+      |         ^~~~~~~~~~~~~~~~~~
+[  9%] Building C object src/CMakeFiles/rtklib.dir/ionex.c.o
+[ 10%] Linking C executable t_matrix
+[ 10%] Built target t_matrix
+[ 11%] Building C object test/utest/CMakeFiles/t_time.dir/t_time.c.o
+[ 12%] Building C object src/CMakeFiles/rtklib.dir/lambda.c.o
+[ 12%] Building C object test/utest/CMakeFiles/t_time.dir/__/__/src/rtkcmn.c.o
+[ 12%] Building C object src/CMakeFiles/rtklib.dir/options.c.o
+[ 13%] Building C object src/CMakeFiles/rtklib.dir/pntpos.c.o
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c: In function ‘satno2id’:
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:39: warning: ‘%02d’ directive output may be truncated writing between 2 and 11 bytes into a region of size 7 [-Wformat-truncation=]
+  518 |         case SYS_LEO: snprintf(id,8,"L%02d",prn-MINPRNLEO+1); return;
+      |                                       ^~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:37: note: directive argument in the range [-2147483647, 2147483647]
+  518 |         case SYS_LEO: snprintf(id,8,"L%02d",prn-MINPRNLEO+1); return;
+      |                                     ^~~~~~~
+In file included from /usr/include/stdio.h:980,
+                 from /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtklib.h:36,
+                 from /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:157:
+In function ‘snprintf’,
+    inlined from ‘satno2id’ at /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:23:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 4 and 13 bytes into a destination of size 8
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c: In function ‘satno2id’:
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:39: warning: ‘%02d’ directive output may be truncated writing between 2 and 11 bytes into a region of size 7 [-Wformat-truncation=]
+  515 |         case SYS_QZS: snprintf(id,8,"J%02d",prn-MINPRNQZS+1); return;
+      |                                       ^~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:37: note: directive argument in the range [-2147483648, 2147483455]
+  515 |         case SYS_QZS: snprintf(id,8,"J%02d",prn-MINPRNQZS+1); return;
+      |                                     ^~~~~~~
+In function ‘snprintf’,
+    inlined from ‘satno2id’ at /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:23:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 4 and 13 bytes into a destination of size 8
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+[ 14%] Building C object src/CMakeFiles/rtklib.dir/postpos.c.o
+[ 14%] Building C object src/CMakeFiles/rtklib.dir/ppp.c.o
+[ 15%] Building C object test/utest/CMakeFiles/t_time.dir/__/__/src/trace.c.o
+[ 16%] Building C object test/utest/CMakeFiles/t_time.dir/__/__/src/preceph.c.o
+[ 16%] Linking C executable t_time
+[ 16%] Built target t_time
+[ 17%] Building C object src/CMakeFiles/rtklib.dir/ppp_ar.c.o
+[ 18%] Building C object test/utest/CMakeFiles/t_coord.dir/t_coord.c.o
+[ 19%] Building C object src/CMakeFiles/rtklib.dir/preceph.c.o
+[ 20%] Building C object test/utest/CMakeFiles/t_coord.dir/__/__/src/rtkcmn.c.o
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c: In function ‘satno2id’:
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:39: warning: ‘%02d’ directive output may be truncated writing between 2 and 11 bytes into a region of size 7 [-Wformat-truncation=]
+  518 |         case SYS_LEO: snprintf(id,8,"L%02d",prn-MINPRNLEO+1); return;
+      |                                       ^~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:37: note: directive argument in the range [-2147483647, 2147483647]
+  518 |         case SYS_LEO: snprintf(id,8,"L%02d",prn-MINPRNLEO+1); return;
+      |                                     ^~~~~~~
+In file included from /usr/include/stdio.h:980,
+                 from /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtklib.h:36,
+                 from /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:157:
+In function ‘snprintf’,
+    inlined from ‘satno2id’ at /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:23:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 4 and 13 bytes into a destination of size 8
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c: In function ‘satno2id’:
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:39: warning: ‘%02d’ directive output may be truncated writing between 2 and 11 bytes into a region of size 7 [-Wformat-truncation=]
+  515 |         case SYS_QZS: snprintf(id,8,"J%02d",prn-MINPRNQZS+1); return;
+      |                                       ^~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:37: note: directive argument in the range [-2147483648, 2147483455]
+  515 |         case SYS_QZS: snprintf(id,8,"J%02d",prn-MINPRNQZS+1); return;
+      |                                     ^~~~~~~
+In function ‘snprintf’,
+    inlined from ‘satno2id’ at /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:23:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 4 and 13 bytes into a destination of size 8
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+[ 20%] Building C object src/CMakeFiles/rtklib.dir/qr_bridge.c.o
+[ 21%] Building C object src/CMakeFiles/rtklib.dir/rcvraw.c.o
+[ 22%] Building C object src/CMakeFiles/rtklib.dir/rinex.c.o
+[ 22%] Building C object test/utest/CMakeFiles/t_coord.dir/__/__/src/trace.c.o
+[ 23%] Building C object test/utest/CMakeFiles/t_coord.dir/__/__/src/geoid.c.o
+[ 24%] Building C object test/utest/CMakeFiles/t_coord.dir/__/__/src/preceph.c.o
+[ 24%] Building C object src/CMakeFiles/rtklib.dir/rtcm.c.o
+[ 24%] Linking C executable t_coord
+[ 24%] Built target t_coord
+[ 25%] Building C object src/CMakeFiles/rtklib.dir/rtcm2.c.o
+[ 25%] Building C object test/utest/CMakeFiles/t_rinex.dir/t_rinex.c.o
+[ 26%] Building C object test/utest/CMakeFiles/t_rinex.dir/__/__/src/rtkcmn.c.o
+[ 27%] Building C object src/CMakeFiles/rtklib.dir/rtcm3.c.o
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c: In function ‘satno2id’:
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:39: warning: ‘%02d’ directive output may be truncated writing between 2 and 11 bytes into a region of size 7 [-Wformat-truncation=]
+  518 |         case SYS_LEO: snprintf(id,8,"L%02d",prn-MINPRNLEO+1); return;
+      |                                       ^~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:37: note: directive argument in the range [-2147483647, 2147483647]
+  518 |         case SYS_LEO: snprintf(id,8,"L%02d",prn-MINPRNLEO+1); return;
+      |                                     ^~~~~~~
+In file included from /usr/include/stdio.h:980,
+                 from /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtklib.h:36,
+                 from /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:157:
+In function ‘snprintf’,
+    inlined from ‘satno2id’ at /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:23:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 4 and 13 bytes into a destination of size 8
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c: In function ‘satno2id’:
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:39: warning: ‘%02d’ directive output may be truncated writing between 2 and 11 bytes into a region of size 7 [-Wformat-truncation=]
+  515 |         case SYS_QZS: snprintf(id,8,"J%02d",prn-MINPRNQZS+1); return;
+      |                                       ^~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:37: note: directive argument in the range [-2147483648, 2147483455]
+  515 |         case SYS_QZS: snprintf(id,8,"J%02d",prn-MINPRNQZS+1); return;
+      |                                     ^~~~~~~
+In function ‘snprintf’,
+    inlined from ‘satno2id’ at /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:23:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 4 and 13 bytes into a destination of size 8
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+[ 28%] Building C object src/CMakeFiles/rtklib.dir/rtcm3e.c.o
+[ 29%] Building C object test/utest/CMakeFiles/t_rinex.dir/__/__/src/trace.c.o
+[ 29%] Building C object test/utest/CMakeFiles/t_rinex.dir/__/__/src/rinex.c.o
+[ 29%] Building C object src/CMakeFiles/rtklib.dir/rtkcmn.c.o
+[ 30%] Building C object test/utest/CMakeFiles/t_rinex.dir/__/__/src/preceph.c.o
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c: In function ‘satno2id’:
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:39: warning: ‘%02d’ directive output may be truncated writing between 2 and 11 bytes into a region of size 7 [-Wformat-truncation=]
+  518 |         case SYS_LEO: snprintf(id,8,"L%02d",prn-MINPRNLEO+1); return;
+      |                                       ^~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:37: note: directive argument in the range [-2147483647, 2147483647]
+  518 |         case SYS_LEO: snprintf(id,8,"L%02d",prn-MINPRNLEO+1); return;
+      |                                     ^~~~~~~
+In file included from /usr/include/stdio.h:980,
+                 from /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtklib.h:36,
+                 from /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:157:
+In function ‘snprintf’,
+    inlined from ‘satno2id’ at /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:23:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 4 and 13 bytes into a destination of size 8
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c: In function ‘satno2id’:
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:39: warning: ‘%02d’ directive output may be truncated writing between 2 and 11 bytes into a region of size 7 [-Wformat-truncation=]
+  515 |         case SYS_QZS: snprintf(id,8,"J%02d",prn-MINPRNQZS+1); return;
+      |                                       ^~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:37: note: directive argument in the range [-2147483648, 2147483455]
+  515 |         case SYS_QZS: snprintf(id,8,"J%02d",prn-MINPRNQZS+1); return;
+      |                                     ^~~~~~~
+In function ‘snprintf’,
+    inlined from ‘satno2id’ at /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:23:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 4 and 13 bytes into a destination of size 8
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+[ 31%] Linking C executable t_rinex
+[ 31%] Built target t_rinex
+[ 32%] Building C object test/utest/CMakeFiles/t_lambda.dir/t_lambda.c.o
+[ 33%] Building C object test/utest/CMakeFiles/t_lambda.dir/__/__/src/rtkcmn.c.o
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c: In function ‘satno2id’:
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:39: warning: ‘%02d’ directive output may be truncated writing between 2 and 11 bytes into a region of size 7 [-Wformat-truncation=]
+  518 |         case SYS_LEO: snprintf(id,8,"L%02d",prn-MINPRNLEO+1); return;
+      |                                       ^~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:37: note: directive argument in the range [-2147483647, 2147483647]
+  518 |         case SYS_LEO: snprintf(id,8,"L%02d",prn-MINPRNLEO+1); return;
+      |                                     ^~~~~~~
+In file included from /usr/include/stdio.h:980,
+                 from /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtklib.h:36,
+                 from /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:157:
+In function ‘snprintf’,
+    inlined from ‘satno2id’ at /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:23:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 4 and 13 bytes into a destination of size 8
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c: In function ‘satno2id’:
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:39: warning: ‘%02d’ directive output may be truncated writing between 2 and 11 bytes into a region of size 7 [-Wformat-truncation=]
+  515 |         case SYS_QZS: snprintf(id,8,"J%02d",prn-MINPRNQZS+1); return;
+      |                                       ^~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:37: note: directive argument in the range [-2147483648, 2147483455]
+  515 |         case SYS_QZS: snprintf(id,8,"J%02d",prn-MINPRNQZS+1); return;
+      |                                     ^~~~~~~
+In function ‘snprintf’,
+    inlined from ‘satno2id’ at /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:23:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 4 and 13 bytes into a destination of size 8
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+[ 34%] Building C object src/CMakeFiles/rtklib.dir/rtkpos.c.o
+[ 34%] Building C object test/utest/CMakeFiles/t_lambda.dir/__/__/src/trace.c.o
+[ 35%] Building C object test/utest/CMakeFiles/t_lambda.dir/__/__/src/lambda.c.o
+[ 36%] Building C object test/utest/CMakeFiles/t_lambda.dir/__/__/src/preceph.c.o
+[ 36%] Linking C executable t_lambda
+[ 36%] Built target t_lambda
+[ 37%] Building C object test/utest/CMakeFiles/t_atmos.dir/t_atmos.c.o
+[ 37%] Building C object test/utest/CMakeFiles/t_atmos.dir/__/__/src/rtkcmn.c.o
+[ 38%] Building C object src/CMakeFiles/rtklib.dir/rtksvr.c.o
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c: In function ‘satno2id’:
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:39: warning: ‘%02d’ directive output may be truncated writing between 2 and 11 bytes into a region of size 7 [-Wformat-truncation=]
+  518 |         case SYS_LEO: snprintf(id,8,"L%02d",prn-MINPRNLEO+1); return;
+      |                                       ^~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:37: note: directive argument in the range [-2147483647, 2147483647]
+  518 |         case SYS_LEO: snprintf(id,8,"L%02d",prn-MINPRNLEO+1); return;
+      |                                     ^~~~~~~
+In file included from /usr/include/stdio.h:980,
+                 from /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtklib.h:36,
+                 from /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:157:
+In function ‘snprintf’,
+    inlined from ‘satno2id’ at /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:23:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 4 and 13 bytes into a destination of size 8
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c: In function ‘satno2id’:
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:39: warning: ‘%02d’ directive output may be truncated writing between 2 and 11 bytes into a region of size 7 [-Wformat-truncation=]
+  515 |         case SYS_QZS: snprintf(id,8,"J%02d",prn-MINPRNQZS+1); return;
+      |                                       ^~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:37: note: directive argument in the range [-2147483648, 2147483455]
+  515 |         case SYS_QZS: snprintf(id,8,"J%02d",prn-MINPRNQZS+1); return;
+      |                                     ^~~~~~~
+In function ‘snprintf’,
+    inlined from ‘satno2id’ at /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:23:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 4 and 13 bytes into a destination of size 8
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+[ 38%] Building C object src/CMakeFiles/rtklib.dir/sbas.c.o
+[ 39%] Building C object src/CMakeFiles/rtklib.dir/sofa.c.o
+[ 40%] Building C object src/CMakeFiles/rtklib.dir/solution.c.o
+[ 41%] Building C object test/utest/CMakeFiles/t_atmos.dir/__/__/src/trace.c.o
+[ 42%] Building C object test/utest/CMakeFiles/t_atmos.dir/__/__/src/preceph.c.o
+[ 42%] Linking C executable t_atmos
+[ 42%] Built target t_atmos
+[ 42%] Building C object test/utest/CMakeFiles/t_misc.dir/t_misc.c.o
+[ 42%] Building C object src/CMakeFiles/rtklib.dir/stream.c.o
+[ 43%] Building C object test/utest/CMakeFiles/t_misc.dir/__/__/src/rtkcmn.c.o
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c: In function ‘satno2id’:
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:39: warning: ‘%02d’ directive output may be truncated writing between 2 and 11 bytes into a region of size 7 [-Wformat-truncation=]
+  518 |         case SYS_LEO: snprintf(id,8,"L%02d",prn-MINPRNLEO+1); return;
+      |                                       ^~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:37: note: directive argument in the range [-2147483647, 2147483647]
+  518 |         case SYS_LEO: snprintf(id,8,"L%02d",prn-MINPRNLEO+1); return;
+      |                                     ^~~~~~~
+In file included from /usr/include/stdio.h:980,
+                 from /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtklib.h:36,
+                 from /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:157:
+In function ‘snprintf’,
+    inlined from ‘satno2id’ at /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:23:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 4 and 13 bytes into a destination of size 8
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c: In function ‘satno2id’:
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:39: warning: ‘%02d’ directive output may be truncated writing between 2 and 11 bytes into a region of size 7 [-Wformat-truncation=]
+  515 |         case SYS_QZS: snprintf(id,8,"J%02d",prn-MINPRNQZS+1); return;
+      |                                       ^~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:37: note: directive argument in the range [-2147483648, 2147483455]
+  515 |         case SYS_QZS: snprintf(id,8,"J%02d",prn-MINPRNQZS+1); return;
+      |                                     ^~~~~~~
+In function ‘snprintf’,
+    inlined from ‘satno2id’ at /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:23:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 4 and 13 bytes into a destination of size 8
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+[ 44%] Building C object src/CMakeFiles/rtklib.dir/streamsvr.c.o
+[ 45%] Building C object src/CMakeFiles/rtklib.dir/tides.c.o
+[ 46%] Building C object test/utest/CMakeFiles/t_misc.dir/__/__/src/trace.c.o
+[ 47%] Building C object test/utest/CMakeFiles/t_misc.dir/__/__/src/preceph.c.o
+[ 47%] Building C object src/CMakeFiles/rtklib.dir/tle.c.o
+[ 48%] Building C object src/CMakeFiles/rtklib.dir/trace.c.o
+[ 48%] Linking C executable t_misc
+[ 49%] Building C object src/CMakeFiles/rtklib.dir/rcv/binex.c.o
+[ 49%] Built target t_misc
+[ 50%] Building C object test/utest/CMakeFiles/t_preceph.dir/t_preceph.c.o
+[ 51%] Building C object test/utest/CMakeFiles/t_preceph.dir/__/__/src/rtkcmn.c.o
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c: In function ‘satno2id’:
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:39: warning: ‘%02d’ directive output may be truncated writing between 2 and 11 bytes into a region of size 7 [-Wformat-truncation=]
+  518 |         case SYS_LEO: snprintf(id,8,"L%02d",prn-MINPRNLEO+1); return;
+      |                                       ^~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:37: note: directive argument in the range [-2147483647, 2147483647]
+  518 |         case SYS_LEO: snprintf(id,8,"L%02d",prn-MINPRNLEO+1); return;
+      |                                     ^~~~~~~
+In file included from /usr/include/stdio.h:980,
+                 from /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtklib.h:36,
+                 from /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:157:
+In function ‘snprintf’,
+    inlined from ‘satno2id’ at /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:23:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 4 and 13 bytes into a destination of size 8
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c: In function ‘satno2id’:
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:39: warning: ‘%02d’ directive output may be truncated writing between 2 and 11 bytes into a region of size 7 [-Wformat-truncation=]
+  515 |         case SYS_QZS: snprintf(id,8,"J%02d",prn-MINPRNQZS+1); return;
+      |                                       ^~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:37: note: directive argument in the range [-2147483648, 2147483455]
+  515 |         case SYS_QZS: snprintf(id,8,"J%02d",prn-MINPRNQZS+1); return;
+      |                                     ^~~~~~~
+In function ‘snprintf’,
+    inlined from ‘satno2id’ at /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:23:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 4 and 13 bytes into a destination of size 8
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+[ 51%] Building C object src/CMakeFiles/rtklib.dir/rcv/crescent.c.o
+[ 52%] Building C object src/CMakeFiles/rtklib.dir/rcv/javad.c.o
+[ 52%] Building C object test/utest/CMakeFiles/t_preceph.dir/__/__/src/trace.c.o
+[ 53%] Building C object test/utest/CMakeFiles/t_preceph.dir/__/__/src/preceph.c.o
+[ 54%] Building C object src/CMakeFiles/rtklib.dir/rcv/novatel.c.o
+[ 55%] Building C object test/utest/CMakeFiles/t_preceph.dir/__/__/src/rinex.c.o
+[ 56%] Building C object src/CMakeFiles/rtklib.dir/rcv/nvs.c.o
+[ 56%] Building C object src/CMakeFiles/rtklib.dir/rcv/rt17.c.o
+[ 57%] Building C object src/CMakeFiles/rtklib.dir/rcv/septentrio.c.o
+[ 57%] Building C object test/utest/CMakeFiles/t_preceph.dir/__/__/src/ephemeris.c.o
+[ 58%] Building C object test/utest/CMakeFiles/t_preceph.dir/__/__/src/sbas.c.o
+[ 59%] Linking C executable t_preceph
+[ 59%] Built target t_preceph
+[ 59%] Building C object test/utest/CMakeFiles/t_gloeph.dir/t_gloeph.c.o
+[ 60%] Building C object test/utest/CMakeFiles/t_gloeph.dir/__/__/src/rtkcmn.c.o
+[ 61%] Building C object src/CMakeFiles/rtklib.dir/rcv/skytraq.c.o
+[ 61%] Building C object src/CMakeFiles/rtklib.dir/rcv/swiftnav.c.o
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c: In function ‘satno2id’:
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:39: warning: ‘%02d’ directive output may be truncated writing between 2 and 11 bytes into a region of size 7 [-Wformat-truncation=]
+  518 |         case SYS_LEO: snprintf(id,8,"L%02d",prn-MINPRNLEO+1); return;
+      |                                       ^~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:37: note: directive argument in the range [-2147483647, 2147483647]
+  518 |         case SYS_LEO: snprintf(id,8,"L%02d",prn-MINPRNLEO+1); return;
+      |                                     ^~~~~~~
+In file included from /usr/include/stdio.h:980,
+                 from /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtklib.h:36,
+                 from /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:157:
+In function ‘snprintf’,
+    inlined from ‘satno2id’ at /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:23:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 4 and 13 bytes into a destination of size 8
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c: In function ‘satno2id’:
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:39: warning: ‘%02d’ directive output may be truncated writing between 2 and 11 bytes into a region of size 7 [-Wformat-truncation=]
+  515 |         case SYS_QZS: snprintf(id,8,"J%02d",prn-MINPRNQZS+1); return;
+      |                                       ^~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:37: note: directive argument in the range [-2147483648, 2147483455]
+  515 |         case SYS_QZS: snprintf(id,8,"J%02d",prn-MINPRNQZS+1); return;
+      |                                     ^~~~~~~
+In function ‘snprintf’,
+    inlined from ‘satno2id’ at /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:23:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 4 and 13 bytes into a destination of size 8
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+[ 62%] Building C object src/CMakeFiles/rtklib.dir/rcv/ublox.c.o
+[ 63%] Building C object src/CMakeFiles/rtklib.dir/rcv/unicore.c.o
+[ 64%] Building C object test/utest/CMakeFiles/t_gloeph.dir/__/__/src/trace.c.o
+[ 64%] Building C object test/utest/CMakeFiles/t_gloeph.dir/__/__/src/rinex.c.o
+[ 64%] Linking C shared library /home/runner/work/RTKLIB-QR/RTKLIB-QR/lib/librtklib.so
+[ 64%] Built target rtklib
+[ 65%] Building C object test/utest/CMakeFiles/t_geoid.dir/t_geoid.c.o
+[ 66%] Building C object test/utest/CMakeFiles/t_geoid.dir/__/__/src/rtkcmn.c.o
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c: In function ‘satno2id’:
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:39: warning: ‘%02d’ directive output may be truncated writing between 2 and 11 bytes into a region of size 7 [-Wformat-truncation=]
+  518 |         case SYS_LEO: snprintf(id,8,"L%02d",prn-MINPRNLEO+1); return;
+      |                                       ^~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:37: note: directive argument in the range [-2147483647, 2147483647]
+  518 |         case SYS_LEO: snprintf(id,8,"L%02d",prn-MINPRNLEO+1); return;
+      |                                     ^~~~~~~
+In file included from /usr/include/stdio.h:980,
+                 from /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtklib.h:36,
+                 from /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:157:
+In function ‘snprintf’,
+    inlined from ‘satno2id’ at /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:23:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 4 and 13 bytes into a destination of size 8
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c: In function ‘satno2id’:
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:39: warning: ‘%02d’ directive output may be truncated writing between 2 and 11 bytes into a region of size 7 [-Wformat-truncation=]
+  515 |         case SYS_QZS: snprintf(id,8,"J%02d",prn-MINPRNQZS+1); return;
+      |                                       ^~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:37: note: directive argument in the range [-2147483648, 2147483455]
+  515 |         case SYS_QZS: snprintf(id,8,"J%02d",prn-MINPRNQZS+1); return;
+      |                                     ^~~~~~~
+In function ‘snprintf’,
+    inlined from ‘satno2id’ at /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:23:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 4 and 13 bytes into a destination of size 8
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+[ 67%] Building C object test/utest/CMakeFiles/t_gloeph.dir/__/__/src/ephemeris.c.o
+[ 68%] Building C object test/utest/CMakeFiles/t_gloeph.dir/__/__/src/sbas.c.o
+[ 68%] Building C object test/utest/CMakeFiles/t_geoid.dir/__/__/src/trace.c.o
+[ 69%] Building C object test/utest/CMakeFiles/t_geoid.dir/__/__/src/preceph.c.o
+[ 69%] Building C object test/utest/CMakeFiles/t_gloeph.dir/__/__/src/preceph.c.o
+[ 70%] Building C object test/utest/CMakeFiles/t_geoid.dir/__/__/src/geoid.c.o
+[ 71%] Linking C executable t_gloeph
+[ 71%] Built target t_gloeph
+[ 72%] Building C object test/utest/CMakeFiles/t_ppp.dir/t_ppp.c.o
+[ 73%] Building C object test/utest/CMakeFiles/t_ppp.dir/__/__/src/rtkcmn.c.o
+[ 74%] Linking C executable t_geoid
+[ 74%] Built target t_geoid
+[ 75%] Building C object test/utest/CMakeFiles/t_ionex.dir/t_ionex.c.o
+[ 75%] Building C object test/utest/CMakeFiles/t_ionex.dir/__/__/src/rtkcmn.c.o
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c: In function ‘satno2id’:
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:39: warning: ‘%02d’ directive output may be truncated writing between 2 and 11 bytes into a region of size 7 [-Wformat-truncation=]
+  518 |         case SYS_LEO: snprintf(id,8,"L%02d",prn-MINPRNLEO+1); return;
+      |                                       ^~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:37: note: directive argument in the range [-2147483647, 2147483647]
+  518 |         case SYS_LEO: snprintf(id,8,"L%02d",prn-MINPRNLEO+1); return;
+      |                                     ^~~~~~~
+In file included from /usr/include/stdio.h:980,
+                 from /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtklib.h:36,
+                 from /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:157:
+In function ‘snprintf’,
+    inlined from ‘satno2id’ at /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:23:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 4 and 13 bytes into a destination of size 8
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c: In function ‘satno2id’:
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:39: warning: ‘%02d’ directive output may be truncated writing between 2 and 11 bytes into a region of size 7 [-Wformat-truncation=]
+  515 |         case SYS_QZS: snprintf(id,8,"J%02d",prn-MINPRNQZS+1); return;
+      |                                       ^~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:37: note: directive argument in the range [-2147483648, 2147483455]
+  515 |         case SYS_QZS: snprintf(id,8,"J%02d",prn-MINPRNQZS+1); return;
+      |                                     ^~~~~~~
+In function ‘snprintf’,
+    inlined from ‘satno2id’ at /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:23:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 4 and 13 bytes into a destination of size 8
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c: In function ‘satno2id’:
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:39: warning: ‘%02d’ directive output may be truncated writing between 2 and 11 bytes into a region of size 7 [-Wformat-truncation=]
+  518 |         case SYS_LEO: snprintf(id,8,"L%02d",prn-MINPRNLEO+1); return;
+      |                                       ^~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:37: note: directive argument in the range [-2147483647, 2147483647]
+  518 |         case SYS_LEO: snprintf(id,8,"L%02d",prn-MINPRNLEO+1); return;
+      |                                     ^~~~~~~
+In file included from /usr/include/stdio.h:980,
+                 from /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtklib.h:36,
+                 from /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:157:
+In function ‘snprintf’,
+    inlined from ‘satno2id’ at /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:23:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 4 and 13 bytes into a destination of size 8
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c: In function ‘satno2id’:
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:39: warning: ‘%02d’ directive output may be truncated writing between 2 and 11 bytes into a region of size 7 [-Wformat-truncation=]
+  515 |         case SYS_QZS: snprintf(id,8,"J%02d",prn-MINPRNQZS+1); return;
+      |                                       ^~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:37: note: directive argument in the range [-2147483648, 2147483455]
+  515 |         case SYS_QZS: snprintf(id,8,"J%02d",prn-MINPRNQZS+1); return;
+      |                                     ^~~~~~~
+In function ‘snprintf’,
+    inlined from ‘satno2id’ at /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:23:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 4 and 13 bytes into a destination of size 8
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+[ 75%] Building C object test/utest/CMakeFiles/t_ppp.dir/__/__/src/trace.c.o
+[ 76%] Building C object test/utest/CMakeFiles/t_ppp.dir/__/__/src/ephemeris.c.o
+[ 77%] Building C object test/utest/CMakeFiles/t_ionex.dir/__/__/src/trace.c.o
+[ 78%] Building C object test/utest/CMakeFiles/t_ionex.dir/__/__/src/preceph.c.o
+[ 79%] Building C object test/utest/CMakeFiles/t_ppp.dir/__/__/src/preceph.c.o
+[ 80%] Building C object test/utest/CMakeFiles/t_ionex.dir/__/__/src/ionex.c.o
+[ 80%] Building C object test/utest/CMakeFiles/t_ppp.dir/__/__/src/sbas.c.o
+[ 80%] Linking C executable t_ionex
+[ 80%] Built target t_ionex
+[ 81%] Building C object test/utest/CMakeFiles/t_tle.dir/t_tle.c.o
+[ 82%] Building C object test/utest/CMakeFiles/t_tle.dir/__/__/src/rtkcmn.c.o
+[ 83%] Building C object test/utest/CMakeFiles/t_ppp.dir/__/__/src/ionex.c.o
+[ 84%] Building C object test/utest/CMakeFiles/t_ppp.dir/__/__/src/pntpos.c.o
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c: In function ‘satno2id’:
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:39: warning: ‘%02d’ directive output may be truncated writing between 2 and 11 bytes into a region of size 7 [-Wformat-truncation=]
+  518 |         case SYS_LEO: snprintf(id,8,"L%02d",prn-MINPRNLEO+1); return;
+      |                                       ^~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:37: note: directive argument in the range [-2147483647, 2147483647]
+  518 |         case SYS_LEO: snprintf(id,8,"L%02d",prn-MINPRNLEO+1); return;
+      |                                     ^~~~~~~
+In file included from /usr/include/stdio.h:980,
+                 from /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtklib.h:36,
+                 from /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:157:
+In function ‘snprintf’,
+    inlined from ‘satno2id’ at /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:518:23:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 4 and 13 bytes into a destination of size 8
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c: In function ‘satno2id’:
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:39: warning: ‘%02d’ directive output may be truncated writing between 2 and 11 bytes into a region of size 7 [-Wformat-truncation=]
+  515 |         case SYS_QZS: snprintf(id,8,"J%02d",prn-MINPRNQZS+1); return;
+      |                                       ^~~~
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:37: note: directive argument in the range [-2147483648, 2147483455]
+  515 |         case SYS_QZS: snprintf(id,8,"J%02d",prn-MINPRNQZS+1); return;
+      |                                     ^~~~~~~
+In function ‘snprintf’,
+    inlined from ‘satno2id’ at /home/runner/work/RTKLIB-QR/RTKLIB-QR/src/rtkcmn.c:515:23:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 4 and 13 bytes into a destination of size 8
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+[ 84%] Building C object test/utest/CMakeFiles/t_ppp.dir/__/__/src/ppp.c.o
+[ 85%] Building C object test/utest/CMakeFiles/t_ppp.dir/__/__/src/ppp_ar.c.o
+[ 85%] Building C object test/utest/CMakeFiles/t_tle.dir/__/__/src/trace.c.o
+[ 86%] Building C object test/utest/CMakeFiles/t_ppp.dir/__/__/src/lambda.c.o
+[ 87%] Building C object test/utest/CMakeFiles/t_tle.dir/__/__/src/rinex.c.o
+[ 88%] Building C object test/utest/CMakeFiles/t_ppp.dir/__/__/src/tides.c.o
+[ 88%] Linking C executable t_ppp
+[ 88%] Built target t_ppp
+[ 89%] Building C object app/consapp/CMakeFiles/rnx2rtkp.dir/rnx2rtkp/rnx2rtkp.c.o
+[ 90%] Linking C executable /home/runner/work/RTKLIB-QR/RTKLIB-QR/bin/rnx2rtkp
+[ 90%] Built target rnx2rtkp
+[ 91%] Building C object test/utest/CMakeFiles/t_tle.dir/__/__/src/ephemeris.c.o
+[ 91%] Building C object test/utest/CMakeFiles/t_tle.dir/__/__/src/sbas.c.o
+[ 92%] Building C object test/utest/CMakeFiles/t_tle.dir/__/__/src/preceph.c.o
+[ 93%] Building C object test/utest/CMakeFiles/t_tle.dir/__/__/src/tle.c.o
+[ 93%] Building C object app/consapp/CMakeFiles/convbin.dir/convbin/convbin.c.o
+[ 94%] Linking C executable t_tle
+[ 94%] Built target t_tle
+[ 95%] Building C object app/consapp/CMakeFiles/pos2kml.dir/pos2kml/pos2kml.c.o
+[ 95%] Linking C executable /home/runner/work/RTKLIB-QR/RTKLIB-QR/bin/pos2kml
+[ 95%] Built target pos2kml
+[ 96%] Building C object app/consapp/CMakeFiles/rtkrcv.dir/rtkrcv/rtkrcv.c.o
+[ 97%] Linking C executable /home/runner/work/RTKLIB-QR/RTKLIB-QR/bin/convbin
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/app/consapp/rtkrcv/rtkrcv.c: In function ‘daemonise’:
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/app/consapp/rtkrcv/rtkrcv.c:1753:5: warning: ignoring return value of ‘dup’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+ 1753 |     dup(1);
+      |     ^~~~~~
+[ 97%] Built target convbin
+[ 98%] Building C object app/consapp/CMakeFiles/str2str.dir/str2str/str2str.c.o
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/app/consapp/str2str/str2str.c: In function ‘daemonise’:
+/home/runner/work/RTKLIB-QR/RTKLIB-QR/app/consapp/str2str/str2str.c:277:5: warning: ignoring return value of ‘dup’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  277 |     dup(1);
+      |     ^~~~~~
+[ 99%] Linking C executable /home/runner/work/RTKLIB-QR/RTKLIB-QR/bin/str2str
+[ 99%] Built target str2str
+[100%] Building C object app/consapp/CMakeFiles/rtkrcv.dir/rtkrcv/vt.c.o
+[100%] Linking C executable /home/runner/work/RTKLIB-QR/RTKLIB-QR/bin/rtkrcv
+[100%] Built target rtkrcv

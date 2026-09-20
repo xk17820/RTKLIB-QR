@@ -1,0 +1,56 @@
+{
+  "purpose": "archive unfinished work for a new chat, not approve deployment",
+  "source_commit_before_snapshot": "93dd658dd6237496378c2ca07f232e1f20d6f9c2",
+  "run_url": "https://github.com/xk17820/RTKLIB-QR/actions/runs/35502726690",
+  "source_materialized": true,
+  "checks": {
+    "dependencies": "success",
+    "build": "success",
+    "ctest": "success",
+    "pytest": "failure"
+  },
+  "files": {
+    "build.txt": {
+      "bytes": 54050,
+      "sha256": "ca15d4235206dba65272b93f7022b5be526c18849c987adcc7add7171d8dbb99"
+    },
+    "configure.txt": {
+      "bytes": 723,
+      "sha256": "66ca7c1bbacc6ffeaa8a78d277eba8409612d2382f5ed2193807b8218878e89f"
+    },
+    "ctest.txt": {
+      "bytes": 5843,
+      "sha256": "5e8843d920d4fb4d1ff4241489032ac095c3ecc4ec11d0eb5324b7e5c468abd8"
+    },
+    "environment.txt": {
+      "bytes": 139,
+      "sha256": "143221e8c96513360c4c99f207634561dd2d46809685a18ad8586cf819d570e3"
+    },
+    "previous_guard_manifest.json": {
+      "bytes": 5728,
+      "sha256": "c9b202a4a9605a34c5e969f79ac4b3bd29da9243876844fd491ea270e19dc22e"
+    },
+    "previous_guard_payload.bin": {
+      "bytes": 31880,
+      "sha256": "c270ff865fb391da24f7f772ae40972b98397e9f90d83f40378bd08e54537e8c"
+    },
+    "pytest.txt": {
+      "bytes": 3703,
+      "sha256": "d0e798bb4bf1b0c6a7bf9ff196ba367b16f609a7419e820bf402dc3698d14e61"
+    },
+    "scl_payload.xz": {
+      "bytes": 27228,
+      "sha256": "f96785b2bd811259a911ffc9b6da3e540233937dbd9de3734983634ebdda8434"
+    },
+    "scl_source.patch": {
+      "bytes": 104327,
+      "sha256": "63f31bf95c53d9701db56bc06cf6c990fb506e0678a2330651b6398f43fdb61c"
+    },
+    "source_manifest.json": {
+      "bytes": 5638,
+      "sha256": "80e065582086c5191a4d3efa4cf49a9a07f2a25deb367ea43e03f9c7a449c23f"
+    }
+  },
+  "new_large_experiments_completed": false,
+  "production_approved": false
+}

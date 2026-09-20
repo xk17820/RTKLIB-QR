@@ -1,0 +1,1744 @@
+--- a/README-QR.md
++++ b/README-QR.md
+@@ -1,35 +1,9 @@
+-# RTKLIB-QR：参考轨迹监督的 Q/R 学习与 C 部署
++# SCL-RTK / RTKLIB-QR research branch
+ 
+-研究分支：`research/learned-qr`。`main` 保留上游。**原有 LAMBDA、固定管理、fix-and-hold 和双差协方差函数不改；不增加 bias head、不回归坐标。**
++**Structured Covariance Learning for RTK**: C-native RTK with causal code-quality features, structured Q/R multipliers and integer-candidate-conditioned reference-position supervision. Original LAMBDA, acceptance and hold algorithms remain; no pseudorange bias or coordinate-correction branch.
+ 
+-现在顶层 C 解算器已接入 Q/R；不是必须先运行补丁的原型目录。提供原始 RINEX → 在线原生 FLOAT 递推 → 参考位置损失 → 网络更新 → 权重导出 → C 回放的可执行流程。
++Start with [`research/learned_qr/docs/SCL_RTK.md`](research/learned_qr/docs/SCL_RTK.md). General raw-data/CSV interfaces: [`TRAINING.md`](research/learned_qr/docs/TRAINING.md). Source and tests live in `research/learned_qr`; native hooks are already integrated under top-level `src`.
+ 
+-- [完整训练、数据格式和部署说明](research/learned_qr/docs/TRAINING.md)
+-- [梯度定义及与原论文的区别](research/learned_qr/docs/REFERENCE_LOSS.md)
+-- [验证记录及性能结论边界](research/learned_qr/docs/VERIFICATION.md)
+-- [数据清单示例](research/learned_qr/configs/dataset.example.json)
++V1/V2 files remain readable. V3 fixes phase weights and uses causal observation consistency rather than absolute-C/N0 gating. Training supervises actual continuous FLOAT **and DGPS-labelled filter states**, not independent SINGLE/SPP outputs. Conditional gradients do not differentiate integer search, local H, feature construction or hold decisions.
+ 
+-## Ubuntu / WSL 构建入口
+-
+-完整上游测试需要 BLAS/LAPACK 开发库；只编译 `rnx2rtkp` 不能代替这些测试。Windows 原生 DLL 尚未做全平台验收。
+-
+-```bash
+-sudo apt-get update
+-sudo apt-get install -y build-essential cmake git python3-venv libblas-dev liblapack-dev
+-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+-cmake --build build -j4
+-python3 -m venv .venv
+-. .venv/bin/activate
+-python -m pip install -r research/learned_qr/requirements.txt
+-ctest --test-dir build --output-on-failure
+-(cd research/learned_qr && OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python -m pytest -q)
+-python research/learned_qr/run_qr.py --help
+-python research/learned_qr/run_qr.py train --manifest /path/dataset.json \
+-  --config research/learned_qr/configs/short-baseline.conf --output outputs/run01
+-```
+-
+-**方法边界：**训练是条件一阶 EKF 求导，局部 H、坐标旋转、因果特征及离散选择停止梯度；不是对全部 C 指令和整数搜索做自动微分。训练/桥接回放使用 Cholesky/Joseph 数值更新，必须同时比较“稳定核关闭学习”的基线，不能把数值核变化带来的增益算成学习增益。原生 `rnx2rtkp` 默认关闭学习且不启用稳定核时保留旧路径。
+-
+-验证使用仓库附带的真实格式 RINEX，训练链路测试中的参考标签是人工构造的；没有随仓库提供真实训练权重或定位改善结论。用户需在自己的独立训练、验证、测试路线中评估。
+-
+-GitHub Actions 常规验证使用只读权限，构建全部原生目标并运行原生和学习模块测试；测试输出在 `qr-validation` artifact，当前提交的源码包在 `qr-source` artifact。发布过程中使用的一次性传输文件已移除，用户不需要运行任何发布脚本。
++A completed software test is not evidence that a trained model improves positioning. Validation rejection leaves an explicitly untrained identity fallback. Never deploy synthetic or rejected weights as a validated field model. Previous negative experiment reports are retained. This branch does not modify upstream `main`.
+--- a/research/learned_qr/docs/REFERENCE_LOSS.md
++++ b/research/learned_qr/docs/REFERENCE_LOSS.md
+@@ -1,3 +1,7 @@
++> 新版SCL-RTK已增加只读原整数候选条件位置辅助项，并同时监督实际连续FLOAT/DGPS滤波状态；SINGLE单点输出不伪造梯度。详见 [SCL_RTK.md](SCL_RTK.md)。以下保留基础一阶滤波说明，不能将其解释为对整数搜索/hold的精确反传。
++
++> 修正版说明：梯度近似的边界不变。默认 V2 的 R 仅对码观测进行受限网络调权；正常/缺失 C/N0 的倍率为1，相位保护是固定有界规则（默认不改变），不是学习相位误差或 bias。具体公式、验证选择和反例见 `GUARDED_R_REPAIR.md`。
++
+ # 参考位置 loss 与实际梯度链
+ 
+ ## 已实现的路径
+--- /dev/null
++++ b/research/learned_qr/docs/SCL_RTK.md
+@@ -0,0 +1,48 @@
++# SCL-RTK — Structured Covariance Learning for RTK
++
++This research implementation learns motion-process and code-observation covariance multipliers while retaining the native RTKLIB ambiguity search, acceptance and hold routines. It does not predict coordinates or introduce a pseudorange bias head. Software correctness and learned positioning performance are separate claims; a model rejected by validation is not promoted as a successful model.
++
++## Mechanism
++
++- Native C forward and deployment; 10-epoch causal feature windows and 16-unit temporal MLPs.
++- Q scales the original horizontal/vertical acceleration driving covariance, not every state or ambiguity variance.
++- V3 R uses clock-centred standardized code innovations and dual-frequency code–carrier multipath deviation. C/N0 remains an input, not the quality gate. The MP feature has a causal, bounded-rate anchor and resets on **either** frequency's discontinuity.
++- Code inflation is `1 + g * max(s_theta - 1, 0)`. Phase weights remain exactly at their original values. V3 rejects a header claiming a different phase cap.
++- SD variances are transformed by the native DD covariance constructor, retaining reference-satellite correlations and existing half-cycle additions.
++- The read-only candidate observer copies native flags before calling the original DD selector/LAMBDA. It provides an integer vector before ratio acceptance for the conditional loss `p_check = p - P_pa solve(P_aa, a - a_check)`.
++- A separate read-only observer exports **actually accepted** DD integers for simulation audit. Position-threshold exceedance is not used as a synonym for an incorrectly fixed integer.
++
++## Training and derivative scope
++
++The default experiment uses native continuous FLOAT/DGPS forward states. RTKLIB may label an accepted continuous update as DGPS when fewer than four phase satellites remain; these states are still `rtk->x` and **are supervised**. Independent SINGLE/SPP outputs are not attached to a fictitious filter gradient. Reference positions are never passed as native observations, features, or initial states.
++
++The compact tape retains active-state means/covariances, SD/DD covariance dependence, Kalman gain and Joseph updates. It stops gradients through local H, feature extraction, rotations, discrete activity/selection/reset decisions and integer search. The conditional candidate position is differentiable **given a fixed integer vector**. This is conditional first-order differentiation, not exact differentiation of the entire C program or fix-and-hold decisions. Main simulations use native continuous AR; unchanged hold code is not evidence of validated hold-path derivatives.
++
++Optional deterministic rotating-window TBPTT (`--gradient-stride 4`) differentiates one in four 64-epoch blocks, while C propagates **every** raw observation. Reloading model weights does not reset the native state/history. Raw-forward, supervised and gradient-bearing epoch counts are recorded separately. `--gradient-stride 1` differentiates every block. A six-round/stride-four experiment does not imply each branch has differentiated every epoch.
++
++The objective combines ENU Huber position error, conditional-candidate position error, innovation NLL, log-multiplier deviation and within-window temporal regularization. Q/R stages alternate. Invalid references mask only the objective. Validation uses complete native RTK; no qualified checkpoint means `best.qr` remains an explicitly untrained identity model.
++
++## Run with local raw data
++
++Rebuild every dependent module: the branch adds native context and observer interfaces.
++
++```bash
++cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS_RELEASE='-O2 -UNDEBUG'
++cmake --build build -j4
++ctest --test-dir build --output-on-failure
++python -m pip install -r research/learned_qr/requirements.txt
++(cd research/learned_qr && OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python -m pytest -q)
++python research/learned_qr/run_qr.py train \
++  --manifest /data/dataset.json --config /data/short-baseline.conf \
++  --output outputs/scl01 --r-policy scl --compact \
++  --conditional-weight 1 --smooth-weight 0.0001 \
++  --epochs 6 --sequence-length 64 --gradient-stride 4
++```
++
++Manifest/reference formats and legacy replay commands remain in `TRAINING.md`. Use GPS dual-frequency, short-baseline forward dynamics for the verified SCL study; multi-constellation transfer, long baselines, antenna/bias changes and real hardware are not certified by these simulations. Study weights retain `synthetic` provenance and require explicit test opt-in.
++
++## Native APIs and checks
++
++`qr_set_learning_options` enables V3 features/read-only candidate or accepted-integer observers. `qr_reload_model` switches between native model inference and a callback without state reset. Callback arrays are borrowed only during that call. The caller may change inference factors only, never source state/covariance arrays.
++
++Regression tests cover native/Torch conditional position equality, two-step Q/R finite differences with a fixed integer, export parity, identity reload, active-state tape equality, L2-only MP reset, rejected malformed models, and the FLOAT/DGPS supervision distinction. These tests establish their stated contracts, not field accuracy or universal robustness.
+--- a/research/learned_qr/docs/TRAINING.md
++++ b/research/learned_qr/docs/TRAINING.md
+@@ -1,3 +1,7 @@
++> SCL-RTK 新版入口、DGPS连续状态监督和V3模型定义见 [SCL_RTK.md](SCL_RTK.md)。本页保留通用数据格式与旧V1/V2选项；旧实验权重和结论不作为新版性能证明。
++
++> 更新：本修正版默认使用 `--r-policy code_guard --selection rtk-safe`。V2 模型和完整 RTK 验证选择规则见 `GUARDED_R_REPAIR.md`；本页旧版 FLOAT 选择说明被新规则替代。`--phase-guard-cap` 默认 1，实验值 4 不是所有接收机通用的标定值。旧 V1 权重不会自动变成修正版。
++
+ # 从自己的观测与参考轨迹开始训练
+ 
+ 本实现是对论文“用最终位置误差优化滤波随机模型”的 RTK 工程迁移，不是对原文 DGNSS/bias/Transformer 的逐项复现。训练是**条件一阶 FLOAT 递推求导**，详见 `REFERENCE_LOSS.md`。不要把代码测试通过理解为自己的定位精度必然提升。
+@@ -90,7 +94,7 @@
+ 
+ `--mode qr` 按完整数据遍历交替训练：第1轮 R，第2轮 Q，然后重复。`q`/`r` 用于消融。窗口10历元是网络特征窗口；`sequence-length` 是截断反向传播长度，两者不是同一参数。训练遍历中每个块后更新权重，滤波数值继续递推，计算图在块边界截断。跨观测长中断时重置会话；参考无效仅屏蔽 loss，不把它作为滤波观测。
+ 
+-loss 主项为 ENU 分量的 Huber 位置误差，U 分量乘 `up-weight`；`--huber-delta 0` 切换到平方误差。另可加创新 NLL 和 log 方差倍率正则。Q/R 方差倍率都有正值上下界。验证只做前向；根据验证集加权位置 RMSE 保存 `best`。不会对 LAMBDA 离散搜索反传。
++loss 主项为 ENU 分量的 Huber 位置误差，U 分量乘 `up-weight`；`--huber-delta 0` 切换到平方误差。另可加创新 NLL 和 log 方差倍率正则。Q/R 方差倍率都有正值上下界。验证只做前向；默认以完整原生 RTK 验证门限相对于倍率1基线筛选 `best`，见 `GUARDED_R_REPAIR.md`。不会对 LAMBDA 离散搜索反传。
+ 
+ 输出目录必须尚不存在，避免覆盖旧实验：
+ 
+--- a/research/learned_qr/qrlearn/cli.py
++++ b/research/learned_qr/qrlearn/cli.py
+@@ -109,6 +109,19 @@
+     t.add_argument('--huber-delta',type=float,default=1.,help='metres; zero selects squared loss')
+     t.add_argument('--nll-weight',type=float,default=1e-3);t.add_argument('--reg-weight',type=float,default=1e-4)
+     t.add_argument('--q-limit',type=float,default=10.);t.add_argument('--r-limit',type=float,default=1000.)
++    t.add_argument('--r-policy',choices=['code_guard','unconstrained','scl','scl_blind'],default='code_guard')
++    t.add_argument('--conditional-weight',type=float,default=0.)
++    t.add_argument('--smooth-weight',type=float,default=0.)
++    t.add_argument('--gradient-stride',type=int,default=1)
++    t.add_argument('--evidence-threshold',type=float,default=2.)
++    t.add_argument('--evidence-width',type=float,default=4.)
++    t.add_argument('--compact',action='store_true')
++    t.add_argument('--guard-anchor',type=float,default=40.)
++    t.add_argument('--guard-width',type=float,default=10.)
++    t.add_argument('--phase-guard-cap',type=float,default=None,help='fixed phase guard, default 1 or inherited')
++    t.add_argument('--selection',choices=['rtk-safe','float'],default='rtk-safe')
++    t.add_argument('--selection-min-improvement',type=float,default=.01)
++    t.add_argument('--selection-fix-threshold',type=float,default=.1)
+     t.add_argument('--device',default='cpu');t.add_argument('--threads',type=int,default=1);t.add_argument('--seed',type=int,default=7)
+     t.add_argument('--init',help='safe weights-only checkpoint initialization (not optimizer resume)')
+     t.add_argument('--allow-training-only',action='store_true');t.add_argument('--provenance',choices=['trained','synthetic'],default='trained')
+--- a/research/learned_qr/qrlearn/model.py
++++ b/research/learned_qr/qrlearn/model.py
+@@ -27,13 +27,69 @@
+         x = history.flatten(start_dim=-2)
+         return torch.exp(math.log(self.limit) * torch.tanh(self.fc2(torch.tanh(self.fc1(x)))))
+ 
++class GuardedCodeNet(ScaleNet):
++    """Learned code inflation with explicit quality constraints.
++
++    The phase guard is a fixed, bounded policy, NOT a learned phase/bias head.
++    C/N0 is only a heuristic; high-C/N0 NLOS can escape this gate. Missing C/N0
++    (zero) is not interpreted as an unreliable signal. Validate receiver-specific
++    thresholds on independent routes before deployment.
++    """
++    def __init__(self,limit,anchor=40.,width=10.,phase_cap=1.):
++        if not math.isfinite(anchor) or not 20<=anchor<=55:
++            raise ValueError('guard anchor must be in [20,55] dB-Hz')
++        if not math.isfinite(width) or not 1<=width<=30:
++            raise ValueError('guard width must be in [1,30] dB-Hz')
++        if not math.isfinite(phase_cap) or not 1<=phase_cap<=100:
++            raise ValueError('phase cap must be in [1,100]')
++        super().__init__(R_FEATURES,1,limit)
++        self.anchor,self.width,self.phase_cap=anchor,width,phase_cap
++
++    def forward(self,history):
++        raw=super().forward(history);last=history[...,-1,:]
++        cn0=40.+10.*last[...,:2]
++        deficit=torch.where(cn0>0.,(self.anchor-cn0)/self.width,torch.zeros_like(cn0))
++        gate=deficit.amax(-1).clamp(0.,1.)*(last[...,-1]>.5)
++        code=1.+gate.unsqueeze(-1)*(raw-1.).clamp(min=0.)
++        phase=1.+gate.unsqueeze(-1)*(self.phase_cap-1.)
++        return torch.where((last[...,3]>.5).unsqueeze(-1),code,phase)
++
++class SCLCodeNet(ScaleNet):
++    """Causal consistency anchored code covariance; carrier-phase is unchanged.
++
++    f8=clock-centered standardized code innovation, f9=dual-frequency MP
++    deviation from a causal anchor. Values are signed-log compressed in C.
++    C/N0 is a feature, never the gate. Missing evidence implies identity.
++    """
++    def __init__(self,limit,threshold=2.,width=4.,use_consistency=True):
++        if not (0<threshold<=55 and 1<=width<=30):raise ValueError('invalid evidence gate')
++        super().__init__(R_FEATURES,1,limit)
++        self.anchor,self.width,self.phase_cap=threshold,width,1.
++        self.use_consistency=use_consistency
++    def forward(self,history):
++        h=history
++        if not self.use_consistency:
++            h=history.clone();h[...,8:11]=0.
++        raw=super().forward(h);last=history[...,-1,:]
++        evidence=torch.expm1(last[...,8:10].abs().clamp(max=8)).amax(-1)
++        gate=((evidence-self.anchor)/self.width).clamp(0.,1.) if self.use_consistency else torch.ones_like(evidence)
++        gate=gate*(last[...,3]>.5)*(last[...,-1]>.5)
++        return 1.+gate.unsqueeze(-1)*(raw-1.).clamp(min=0.)
++
+ class QRModel(nn.Module):
+-    def __init__(self, q_limit: float = 10.0, r_limit: float = 1000.0):
++    def __init__(self, q_limit: float = 10.0, r_limit: float = 1000.0, *,
++                 r_policy='unconstrained',guard_anchor=40.,guard_width=10.,phase_guard_cap=1.,
++                 evidence_threshold=2.,evidence_width=4.):
+         super().__init__()
+         if not 1.0 < q_limit <= 100.0:
+             raise ValueError("q_limit must match native safety cap: (1,100]")
+         self.q = ScaleNet(Q_FEATURES, 2, q_limit)
+-        self.r = ScaleNet(R_FEATURES, 1, r_limit)
++        if r_policy not in ('unconstrained','code_guard','scl','scl_blind'):raise ValueError('unknown R policy')
++        self.r_policy=r_policy
++        self.r = (GuardedCodeNet(r_limit,guard_anchor,guard_width,phase_guard_cap)
++                  if r_policy=='code_guard' else ScaleNet(R_FEATURES,1,r_limit))
++        if r_policy in ('scl','scl_blind'):
++            self.r=SCLCodeNet(r_limit,evidence_threshold,evidence_width,r_policy=='scl')
+ 
+     def forward(self, q_history: torch.Tensor, r_history: torch.Tensor):
+         return self.q(q_history), self.r(r_history)
+@@ -47,7 +103,11 @@
+         codes = {'untrained': 0, 'trained': 1, 'synthetic': 2}
+         if provenance not in codes or not math.isfinite(max_gap) or not 0 < max_gap <= 3600:
+             raise ValueError('invalid provenance or max_gap')
+-        parts = [f'RTKLIB_QR_V1 {codes[provenance]} {self.q.limit:.17g} {self.r.limit:.17g} {max_gap:.17g}\n']
++        magic='RTKLIB_QR_V3' if self.r_policy in ('scl','scl_blind') else 'RTKLIB_QR_V2' if self.r_policy=='code_guard' else 'RTKLIB_QR_V1'
++        parts=[f'{magic} {codes[provenance]} {self.q.limit:.17g} {self.r.limit:.17g} {max_gap:.17g}\n']
++        if self.r_policy!='unconstrained':
++            policy={'code_guard':1,'scl':2,'scl_blind':3}[self.r_policy]
++            parts.append(f'{policy} {self.r.anchor:.17g} {self.r.width:.17g} {self.r.phase_cap:.17g}\n')
+         for net in (self.q, self.r):
+             parts.append(f'{WINDOW*(net.features+1)} {net.outputs}\n')
+             for parameter in (net.fc1.weight, net.fc1.bias, net.fc2.weight, net.fc2.bias):
+--- a/research/learned_qr/qrlearn/native.py
++++ b/research/learned_qr/qrlearn/native.py
+@@ -46,7 +46,7 @@
+ 
+ class Session:
+     def __init__(self,*,config,rover,base,nav,model=None,mode='off',training=True,
+-                 allow_test=False,max_gap=30.0,pair_age=0.05,library=None,stable=True):
++                 allow_test=False,max_gap=30.0,pair_age=0.05,library=None,stable=True,scl=False,candidates=False,observe_fixed=False):
+         if mode not in MODES:raise ValueError('mode must be off/q/r/qr')
+         if not stable and (training or mode!='off'):raise ValueError('legacy update is available only for non-learning replay')
+         if not nav:raise ValueError('at least one navigation file is required')
+@@ -73,6 +73,12 @@
+                 os.fsencode(Path(model).resolve()) if model is not None else None,
+                 MODES[mode],int(training),int(allow_test),max_gap,pair_age,error,len(error))
+         if not self.ptr:raise RuntimeError(error.value.decode('utf-8',errors='replace'))
++        if scl or candidates or observe_fixed:
++            if not hasattr(self.lib,'qr_set_learning_options'):
++                self.close();raise RuntimeError('rebuild library with SCL observer')
++            self.lib.qr_set_learning_options.argtypes=[c.c_void_p,c.c_int,c.c_int,c.c_int]
++            if self.lib.qr_set_learning_options(self.ptr,2 if scl else 0,int(candidates),int(observe_fixed)):
++                self.close();raise RuntimeError('invalid SCL options')
+         if self.lib.qr_set_stable(self.ptr,int(stable)):
+             self.close();raise RuntimeError('unsupported numerical update mode')
+ 
+@@ -104,6 +110,16 @@
+         if not output:raise RuntimeError('native session did not finish the epoch')
+         return output
+ 
++    def reload_model(self,path=None,*,allow_test=False,candidates=False):
++        if not self.ptr or self.failed:raise RuntimeError('session not usable')
++        self.lib.qr_reload_model.argtypes=[c.c_void_p,c.c_char_p,c.c_int,c.c_int,c.c_char_p,c.c_int]
++        error=c.create_string_buffer(1024)
++        with native_call():
++            code=self.lib.qr_reload_model(self.ptr,os.fsencode(Path(path).resolve()) if path is not None else None,
++                int(allow_test),int(candidates),error,len(error))
++        if code:raise RuntimeError(error.value.decode())
++        self.model=path
++
+     def restart(self):
+         if not self.ptr:raise RuntimeError('session closed')
+         error=c.create_string_buffer(1024)
+--- /dev/null
++++ b/research/learned_qr/qrlearn/scl.py
+@@ -0,0 +1,165 @@
++"""SCL conditional candidate loss and compact live first-order filter tape.
++
++Forward is the real native RTKLIB. Only its active state coordinates are kept in
++Torch; no frozen residual replay. Integer candidates and local H/feature inputs
++are stop-gradient. No claim of derivatives through search or fix-and-hold.
++"""
++from __future__ import annotations
++import math
++import numpy as np
++import torch
++from .native import array
++from .model import WINDOW
++
++
++def condition_position(x,P,pairs,integer):
++    """Conditional position for an ACTUAL native double-difference candidate.
++
++    `pairs` indexes the same state basis as x/P; integers are detached even when
++    a caller accidentally supplies a requires_grad tensor. Qaa must be full rank.
++    """
++    a,b=pairs[:,0],pairs[:,1]
++    Q=P[a[:,None],a[None,:]]-P[a[:,None],b[None,:]]-P[b[:,None],a[None,:]]+P[b[:,None],b[None,:]]
++    cross=P[:3,a]-P[:3,b]
++    return x[:3]-cross@torch.linalg.solve(Q,x[a]-x[b]-integer.detach())
++
++
++class CompactTrace:
++    def __init__(self,model,mode='qr'):
++        self.model=model;self.mode=mode;self.device=next(model.parameters()).device
++        if next(model.parameters()).dtype!=torch.float64:raise ValueError('float64 required')
++        self.ids=[];self.lookup={};self.x=self.P=None;self.xp=self.Pp=None
++        self.qscale=self.const([1.,1.]);self.rscale={};self.sd={};self.nfreq=3
++        self.regularizers=[];self.pending_nll=None;self.fixed_position=None;self.fixed_pairs=None
++        self.segment_steps=0;self.updates=0;self.candidate_count=0
++        self.max_state_discrepancy=0.;self.max_cov_discrepancy=0.;self.max_candidate_discrepancy=0.
++        self.last_scales={};self.smooth_terms=[]
++    def const(self,x):return torch.as_tensor(x,dtype=torch.float64,device=self.device)
++    def tensor(self,p,n):return self.const(array(p,n))
++    def mat(self,p,n,m):return self.tensor(p,n*m).reshape(m,n).T
++    @property
++    def global_ids(self):return torch.tensor(self.ids,dtype=torch.long,device=self.device)
++    @property
++    def position(self):return self.x[:3]
++    def ensure(self,ids):
++        new=[int(i) for i in ids if int(i) not in self.lookup]
++        # Input can contain repeated indices; preserve order only once.
++        new=list(dict.fromkeys(new))
++        if not new:return
++        old=len(self.ids)
++        self.ids.extend(new);self.lookup={v:i for i,v in enumerate(self.ids)}
++        if self.x is None:self.x=self.const(np.zeros(len(self.ids)));self.P=self.const(np.zeros((len(self.ids),len(self.ids))))
++        else:
++            self.x=torch.cat([self.x,self.const(np.zeros(len(new)))])
++            self.P=torch.nn.functional.pad(self.P,(0,len(new),0,len(new)))
++    def mapids(self,ids):return torch.tensor([self.lookup[int(i)] for i in ids],dtype=torch.long,device=self.device)
++    def native_values(self,e):
++        x=np.ctypeslib.as_array(e.x,shape=(e.nx,))
++        P=np.ctypeslib.as_array(e.P,shape=(e.nx*e.nx,)).reshape(e.nx,e.nx,order='F')
++        ids=np.asarray(self.ids)
++        return self.const(x[ids].copy()),self.const(P[np.ix_(ids,ids)].copy())
++    def anchor(self,e,x,P):
++        xn,Pn=self.native_values(e)
++        dx=float((x.detach()-xn).abs().max());dp=float((P.detach()-Pn).abs().max())
++        self.max_state_discrepancy=max(self.max_state_discrepancy,dx);self.max_cov_discrepancy=max(self.max_cov_discrepancy,dp)
++        if dx>.01 or dp>2e-5+2e-6*float(Pn.abs().max()):
++            raise RuntimeError(f'compact/native mismatch event={e.kind}: dx={dx:g}, dP={dp:g}')
++        return x+(xn-x).detach(),P+(Pn-P).detach()
++    @staticmethod
++    def block(P,idx,value):
++        out=P.clone();out[idx[:,None],idx[None,:]]=value;return out
++    def detach(self):
++        for n in ('x','P','xp','Pp','qscale','fixed_position'):
++            v=getattr(self,n)
++            if v is not None:setattr(self,n,v.detach())
++        self.rscale={k:v.detach() for k,v in self.rscale.items()};self.sd={k:v.detach() for k,v in self.sd.items()}
++        self.last_scales={k:v.detach() for k,v in self.last_scales.items()}
++        self.regularizers=[];self.pending_nll=None;self.smooth_terms=[]
++    def handle(self,e):
++        k=e.kind
++        if k==1:
++            if e.n:
++                self.ids=[];self.lookup={};self.x=self.P=None;self.segment_steps=0;self.last_scales={}
++            fresh=self.x is None
++            xn=array(e.x,e.nx);p=np.ctypeslib.as_array(e.P,shape=(e.nx*e.nx,))[::e.nx+1]
++            self.ensure(list(range(min(9,e.nx)))+np.flatnonzero((xn!=0)|(p>0)).tolist())
++            if fresh:self.x,self.P=self.native_values(e)
++            else:self.x,self.P=self.anchor(e,self.x,self.P)
++            self.segment_steps+=1
++            self.nfreq=e.m;self.rscale={};self.sd={};self.qscale=self.const([1.,1.]);self.pending_nll=None;self.fixed_position=None
++        elif k==2:
++            self.ensure([e.n]);i=self.lookup[e.n];idx=self.mapids([e.n])
++            self.x=self.x.index_copy(0,idx,self.tensor(e.a,1));mask=torch.ones_like(self.x);mask[i]=0
++            self.P=self.P*mask[:,None]*mask[None,:];P=self.P.clone();P[i,i]=self.tensor(e.b,1)[0];self.P=P
++            self.x,self.P=self.anchor(e,self.x,self.P)
++        elif k==3:
++            ids=array(e.ix,e.n);self.ensure(ids);idx=self.mapids(ids);F=self.mat(e.a,e.n,e.n)
++            self.x=self.x.index_copy(0,idx,F@self.x[idx]);self.P=self.block(self.P,idx,F@self.P[idx[:,None],idx[None,:]]@F.T)
++            self.x,self.P=self.anchor(e,self.x,self.P)
++        elif k==4:
++            Q=self.qscale[0]*self.mat(e.a,3,3)+self.qscale[1]*self.mat(e.b,3,3)
++            ids=self.mapids([6,7,8]);self.P=self.block(self.P,ids,self.P[ids[:,None],ids[None,:]]+Q)
++            self.x,self.P=self.anchor(e,self.x,self.P)
++        elif k in (5,6):
++            history=self.tensor(e.a,WINDOW*(e.n+1)).reshape(WINDOW,e.n+1)
++            key=('q',) if k==5 else tuple(int(i) for i in array(e.ix,2))
++            active=self.mode in (('q','qr') if k==5 else ('r','qr'))
++            # Phase is exactly identity in SCL: avoid building unused NN graphs.
++            if k==6 and getattr(self.model,'r_policy','') in ('scl','scl_blind') and history[-1,3]<.5:active=False
++            scale=(self.model.q if k==5 else self.model.r)(history) if active else self.const([1.]*e.m)
++            if k==5:self.qscale=scale
++            else:self.rscale[key]=scale[0]
++            for i,v in enumerate(scale.detach().cpu().tolist()):e.b[i]=v
++            if active:
++                self.regularizers.append(scale.log().square().mean())
++                # Log smoothness only across continuous valid history; reset/LLI flushes history.
++                if key in self.last_scales and history[-2,-1]>.5:self.smooth_terms.append((scale.log()-self.last_scales[key].log()).square().mean())
++                self.last_scales[key]=scale
++        elif k==7:
++            key=tuple(int(i) for i in array(e.ix,2));self.sd[key]=self.tensor(e.a,1)[0]*self.rscale.get(key,self.const(e.b[0]))
++        elif k==8:
++            self.ensure([e.n]);i=self.lookup[e.n];P=self.P.clone();P[i,i]=P[i,i]+self.tensor(e.a,1)[0];self.P=P
++        elif k==9:
++            self.ensure([e.n]);self.x=self.x.index_copy(0,self.mapids([e.n]),self.const([0.]))
++        elif k==10:
++            ids=self.mapids(array(e.ix,e.n+e.m));part=self.x[ids[e.n:]]
++            offset=self.tensor(e.a,1)[0]-(part-part.detach()).mean()
++            self.x=self.x.index_copy(0,ids[:e.n],self.x[ids[:e.n]]+offset)
++        elif k==11:
++            self.x,self.P=self.anchor(e,self.x,self.P);self.xp,self.Pp=self.x,self.P
++        elif k==12:self.filter(e)
++        elif k==13:
++            self.x,self.P=self.anchor(e,self.xp,self.Pp);self.updates+=1
++        elif k==14:self.x,self.P=self.anchor(e,self.x,self.P)
++        elif k==15:
++            ids=array(e.ix,2*e.n);pairs=self.mapids(ids).reshape(e.n,2)
++            pos=condition_position(self.x,self.P,pairs,self.tensor(e.a,e.n))
++            discrepancy=float((pos.detach()-self.tensor(e.b,3)).abs().max())
++            self.max_candidate_discrepancy=max(discrepancy,self.max_candidate_discrepancy)
++            if discrepancy>.01:raise RuntimeError(f'conditional/native position mismatch {discrepancy:g}')
++            self.fixed_position=pos;self.candidate_count+=1;self.fixed_pairs=pairs
++        elif k==16:pass  # explicit replay-only integer audit
++        else:raise RuntimeError(f'unknown SCL event {k}')
++    def filter(self,e):
++        self.xp,self.Pp=self.anchor(e,self.xp,self.Pp)
++        n,m=e.nx,e.n
++        Hnp=np.ctypeslib.as_array(e.a,shape=(n*m,)).reshape(n,m,order='F')
++        H=self.const(Hnp[np.asarray(self.ids),:].T.copy());v=self.tensor(e.b,m);Rn=self.mat(e.c,m,m)
++        keys={};pairs=[]
++        for flag in array(e.ix,m):
++            flag=int(flag);ch=((flag>>4)&15)*self.nfreq+(flag&15)
++            pair=(((flag>>16)&255,ch),((flag>>8)&255,ch));pairs.append(pair)
++            for key in pair:
++                if key not in self.sd:raise RuntimeError(f'missing SD {key}')
++                if key not in keys:keys[key]=len(keys)
++        D=self.const(np.zeros((m,len(keys))))
++        for j,(a,b) in enumerate(pairs):D[j,keys[a]]=1;D[j,keys[b]]=-1
++        sd=torch.stack([self.sd[k] for k in keys]);Rl=(D*sd[None,:])@D.T;R=Rn+(Rl-Rl.detach())
++        xn,Pn=self.native_values(e);idx=torch.nonzero((xn!=0)&(torch.diagonal(Pn)>0)).flatten()
++        xa=self.xp[idx];Pa=self.Pp[idx[:,None],idx[None,:]];Ha=H[:,idx];Pa=(Pa+Pa.T)*.5
++        residual=v-H@(self.xp-xn);PH=Pa@Ha.T;S=Ha@PH+R;L=torch.linalg.cholesky((S+S.T)*.5)
++        K=torch.cholesky_solve(PH.T,L).T;self.xp=self.xp.index_copy(0,idx,xa+K@residual)
++        A=torch.eye(len(idx),dtype=Pa.dtype,device=Pa.device)-K@Ha
++        post=A@Pa@A.T+K@R@K.T;self.Pp=self.block(self.Pp,idx,(post+post.T)*.5)
++        white=torch.linalg.solve_triangular(L,residual[:,None],upper=False)
++        self.pending_nll=(white.square().sum()+2*L.diagonal().log().sum()+m*math.log(2*math.pi))*.5/m
+--- /dev/null
++++ b/research/learned_qr/qrlearn/selection.py
+@@ -0,0 +1,56 @@
++"""Native complete-RTK model selection. References never enter inference."""
++from __future__ import annotations
++import math
++import numpy as np
++from .native import Session
++from .reference import Reference,enu_rotation,summarize
++
++
++def native_validation(model,routes,args,path,*,baseline=False):
++    model.export(path,provenance='untrained' if baseline else args.provenance,max_gap=args.max_gap)
++    all_e=[];all_s=[];total=0;stats={}
++    for route in routes:
++        ref=Reference.load(route['reference'],max_gap=float(route.get('reference_max_gap_s',args.reference_max_gap)),
++            time_offset=float(route.get('reference_time_offset_s',0)))
++        errors=[];statuses=[];matches=[];available=[];n=fixed=0
++        with Session(config=route.get('config',args.config),rover=route['rover'],base=route['base'],
++            nav=route['nav'],model=None if baseline else path,mode='off' if baseline else args.mode,
++            training=False,allow_test=True,max_gap=args.max_gap,pair_age=args.pair_age,library=args.library) as sess:
++            while (r:=sess.step()) is not None:
++                n+=1;fixed+=int(r['status']==1)
++                ok=r['status']>0 and np.isfinite(r['position']).all()
++                if ok:available.append(r['time'])
++                truth,valid=ref.at(r['time'])
++                if ok and valid:
++                    errors.append(enu_rotation(truth)@(r['position']-truth))
++                    statuses.append(r['status']);matches.append(r['time'])
++        a=summarize(errors,statuses,attempted=n,fix_threshold=args.selection_fix_threshold)
++        a.update(solution_available_epochs=len(available),solution_fixed_fraction=fixed/n if n else 0.,
++                 matched_times=matches,available_times=available)
++        stats[route['id']]=a;total+=n;all_e.extend(errors);all_s.extend(statuses)
++    return dict(aggregate=summarize(all_e,all_s,attempted=total,fix_threshold=args.selection_fix_threshold),routes=stats)
++
++
++def deployment_decision(baseline,candidate,*,min_improvement=.01):
++    if not math.isfinite(min_improvement) or not 0<=min_improvement<1:raise ValueError('invalid minimum improvement')
++    reasons=[];gain=None;b=baseline.get('aggregate',{}).get('rms_3d_m');v=candidate.get('aggregate',{}).get('rms_3d_m')
++    old_routes=baseline.get('routes',{});new_routes=candidate.get('routes',{})
++    if not old_routes or set(old_routes)!=set(new_routes):reasons.append('validation routes missing/changed')
++    if b is None or v is None or not math.isfinite(b) or not math.isfinite(v) or b<=0:
++        reasons.append('no finite positive baseline/candidate RMS')
++    else:
++        gain=(b-v)/b
++        if gain<=0 or gain<min_improvement:reasons.append('insufficient gain over baseline')
++    for key in sorted(set(old_routes)&set(new_routes)):
++        old,new=old_routes[key],new_routes[key]
++        for field in ('attempted_epochs','matched_epochs','solution_available_epochs','matched_times','available_times'):
++            if old.get(field)!=new.get(field):reasons.append(f'{key}: changed {field}')
++        if not old.get('matched_epochs') or not new.get('matched_epochs'):
++            reasons.append(f'{key}: zero matched reference');continue
++        for field,ratio,absolute in [('rms_3d_m',1.02,.001),('p95_3d_m',1.05,.005)]:
++            x,y=new.get(field),old.get(field)
++            if x is None or y is None or not math.isfinite(x) or not math.isfinite(y) or x>ratio*y+absolute:
++                reasons.append(f'{key}: {field} regression')
++        if new['solution_fixed_fraction']+.05<old['solution_fixed_fraction']:reasons.append(f'{key}: FIX fraction drop >5pp')
++        if new['fixed_large_error_proxy_count']>old['fixed_large_error_proxy_count']:reasons.append(f'{key}: increased fixed-position-error proxy')
++    return dict(accepted=not reasons,reasons=reasons,relative_improvement=gain,baseline_rms_3d_m=b,candidate_rms_3d_m=v)
+--- /dev/null
++++ b/research/learned_qr/qrlearn/sparse_training.py
+@@ -0,0 +1,74 @@
++"""Deterministic rotating-window TBPTT with ALL raw epochs propagated in C.
++
++Inactive windows are NOT omitted from the trajectory. Current weights are copied
++into C without resetting state/history. Only gradients are sampled and truncated.
++This is stochastic truncated BPTT, not full-sequence exact differentiation.
++"""
++from pathlib import Path
++import math,tempfile,time
++import numpy as np
++import torch
++from .native import Session
++from .scl import CompactTrace
++from .reference import Reference,enu_rotation,position_loss,summarize
++from .training import has_filter_state
++
++
++def sparse_pass(model,routes,args,*,optimizer=None):
++    train=optimizer is not None;start=time.perf_counter()
++    es=[];ss=[];n=matches=steps=diffslots=ncandidate=0;maxdx=maxdp=0.;grad=[];objectives=[]
++    with tempfile.TemporaryDirectory(prefix='scl-live-') as tmp:
++      file=Path(tmp)/'weights.qr';model.export(file,provenance='synthetic',max_gap=args.max_gap)
++      for route_index,r in enumerate(routes):
++        ref=Reference.load(r['reference'],max_gap=r.get('reference_max_gap_s',args.reference_max_gap),time_offset=r.get('reference_time_offset_s',0))
++        with Session(config=r.get('config',args.config),rover=r['rover'],base=r['base'],nav=r['nav'],model=file,
++          mode=args.mode,training=True,allow_test=True,max_gap=args.max_gap,pair_age=args.pair_age,library=args.library) as session:
++          k=0;engine=None;losses=[];nll=[];last_time=None;since_start=0
++          def flush():
++            nonlocal steps,maxdx,maxdp
++            if engine is None:return
++            if losses:
++                loss=torch.stack(losses).mean()
++                if nll and args.nll_weight:loss=loss+args.nll_weight*torch.stack(nll).mean()
++                if engine.regularizers and args.reg_weight:loss=loss+args.reg_weight*torch.stack(engine.regularizers).mean()
++                if engine.smooth_terms and args.smooth_weight:loss=loss+args.smooth_weight*torch.stack(engine.smooth_terms).mean()
++                if not torch.isfinite(loss):raise FloatingPointError('nonfinite SCL objective')
++                model.zero_grad(set_to_none=True);loss.backward()
++                norm=torch.nn.utils.clip_grad_norm_([p for p in model.parameters() if p.requires_grad],args.gradient_clip,error_if_nonfinite=True)
++                grad.append(float(norm));objectives.append(float(loss.detach()));engine.detach();optimizer.step();steps+=1
++                model.export(file,provenance='synthetic',max_gap=args.max_gap)
++            maxdx=max(maxdx,engine.max_state_discrepancy);maxdp=max(maxdp,engine.max_cov_discrepancy)
++            session.reload_model(file,allow_test=True,candidates=False);losses.clear();nll.clear()
++          while not args.max_epochs_per_route or k<args.max_epochs_per_route:
++            if k%args.sequence_length==0:
++                block=k//args.sequence_length
++                active=train and (block+getattr(args,'round_index',0)+route_index)%args.gradient_stride==0
++                engine=CompactTrace(model,args.mode) if active else None
++                if active:session.reload_model(None,candidates=args.conditional_weight>0)
++            rec=session.step(engine.handle if engine else None)
++            if rec is None:break
++            n+=1;k+=1
++            if last_time is None or rec['time']-last_time>args.max_gap:since_start=0
++            since_start+=1;last_time=rec['time']
++            target,valid=ref.at(rec['time'])
++            if valid and has_filter_state(rec['status']) and since_start>args.warmup_epochs:
++                pos=engine.position if engine else None
++                xy=pos.detach().cpu().numpy() if pos is not None else rec['position']
++                es.append(enu_rotation(target)@(xy-target));ss.append(rec['status']);matches+=1
++                if engine:
++                    val=position_loss(pos,target,up_weight=args.up_weight,huber_delta=args.huber_delta)
++                    if args.conditional_weight>0 and engine.fixed_position is not None:
++                        val=val+args.conditional_weight*position_loss(engine.fixed_position,target,up_weight=args.up_weight,huber_delta=args.huber_delta);ncandidate+=1
++                    losses.append(val);diffslots+=1
++                    if engine.pending_nll is not None:nll.append(engine.pending_nll)
++            if k%args.sequence_length==0:flush();engine=None
++          flush()
++        print(f'  pass {r["id"]} raw={k} cumulative_gradient_epochs={diffslots}',flush=True)
++    if matches==0:raise RuntimeError('no matched continuous-filter reference')
++    a=summarize(es,ss,attempted=n)
++    e=np.asarray(es);a.update(selection_weighted_rmse_m=float(np.sqrt(np.mean(e[:,0]**2+e[:,1]**2+args.up_weight*e[:,2]**2))),
++      optimizer_steps=steps,conditional_supervised_epochs=ncandidate,gradient_epochs=diffslots,raw_forward_epochs=n,
++      max_native_tape_state_difference=maxdx,max_native_tape_cov_difference=maxdp,
++      mean_preclip_gradient_norm=float(np.mean(grad)) if grad else None,
++      mean_training_objective=float(np.mean(objectives)) if objectives else None,wall_seconds=time.perf_counter()-start)
++    return a
+--- a/research/learned_qr/qrlearn/training.py
++++ b/research/learned_qr/qrlearn/training.py
+@@ -8,6 +8,8 @@
+ from .model import QRModel
+ from .native import Session
+ from .live import TraceEngine
++from .scl import CompactTrace
++from .selection import native_validation,deployment_decision
+ from .reference import Reference,enu_rotation,position_loss,summarize
+ 
+ def load_manifest(path,*,allow_training_only=False):
+@@ -37,25 +39,31 @@
+ 
+ def checkpoint_save(path,model,*,max_gap,epoch,mode):
+     path=Path(path);tmp=path.with_name(path.name+'.tmp')
+-    torch.save({'format':1,'state_dict':{k:v.detach().cpu() for k,v in model.state_dict().items()},
++    torch.save({'format':2,'r_policy':model.r_policy,'guard_anchor':getattr(model.r,'anchor',40.),
++        'guard_width':getattr(model.r,'width',10.),'phase_guard_cap':getattr(model.r,'phase_cap',1.),'evidence_threshold':getattr(model.r,'anchor',2.),'evidence_width':getattr(model.r,'width',4.),'state_dict':{k:v.detach().cpu() for k,v in model.state_dict().items()},
+         'q_limit':model.q.limit,'r_limit':model.r.limit,'max_gap':max_gap,'epoch':epoch,'mode':mode},tmp)
+     tmp.replace(path)
+ 
+ def checkpoint_load(path,device='cpu'):
+     data=torch.load(path,map_location='cpu',weights_only=True)
+-    if not isinstance(data,dict) or data.get('format')!=1:raise ValueError('unsupported checkpoint format')
+-    model=QRModel(data['q_limit'],data['r_limit']).double().to(device)
++    if not isinstance(data,dict) or data.get('format') not in (1,2):raise ValueError('unsupported checkpoint format')
++    model=QRModel(data['q_limit'],data['r_limit'],r_policy=data.get('r_policy','unconstrained'),
++        guard_anchor=data.get('guard_anchor',40.),guard_width=data.get('guard_width',10.),
++        phase_guard_cap=data.get('phase_guard_cap',1.),evidence_threshold=data.get('evidence_threshold',2.),evidence_width=data.get('evidence_width',4.)).double().to(device)
+     model.load_state_dict(data['state_dict'],strict=True)
+     if not all(torch.isfinite(p).all() for p in model.parameters()):raise ValueError('checkpoint contains nonfinite parameters')
+     return model,data
+ 
+ def dataset_pass(model,routes,args,*,optimizer=None):
++    if getattr(args,"gradient_stride",1)>1:
++        from .sparse_training import sparse_pass
++        return sparse_pass(model,routes,args,optimizer=optimizer)
+     training=optimizer is not None
+-    errors=[];statuses=[];attempted=matched=steps=updates=0;max_dx=max_dp=0.;grad_norms=[];loss_values=[]
++    errors=[];statuses=[];attempted=matched=steps=updates=0;candidate_epochs=0;max_dx=max_dp=0.;grad_norms=[];loss_values=[]
+     for route in routes:
+         reference=Reference.load(route['reference'],max_gap=float(route.get('reference_max_gap_s',args.reference_max_gap)),
+                                  time_offset=float(route.get('reference_time_offset_s',0)))
+-        engine=TraceEngine(model,args.mode);losses=[];nlls=[]
++        engine=CompactTrace(model,args.mode) if getattr(args,'compact',False) or model.r_policy in ('scl','scl_blind') else TraceEngine(model,args.mode);losses=[];nlls=[]
+         def flush():
+             nonlocal steps
+             if training and losses:
+@@ -63,6 +71,8 @@
+                 if nlls and args.nll_weight:loss=loss+args.nll_weight*torch.stack(nlls).mean()
+                 if engine.regularizers and args.reg_weight:
+                     loss=loss+args.reg_weight*torch.stack(engine.regularizers).mean()
++                if getattr(args,'smooth_weight',0) and getattr(engine,'smooth_terms',[]):
++                    loss=loss+args.smooth_weight*torch.stack(engine.smooth_terms).mean()
+                 if not torch.isfinite(loss):raise FloatingPointError('nonfinite training loss')
+                 model.zero_grad(set_to_none=True);loss.backward()
+                 parameters=[p for p in model.parameters() if p.requires_grad]
+@@ -72,7 +82,8 @@
+             else:engine.detach()
+             losses.clear();nlls.clear()
+         with Session(config=route.get('config',args.config),rover=route['rover'],base=route['base'],nav=route['nav'],
+-                     mode=args.mode,training=True,max_gap=args.max_gap,pair_age=args.pair_age,library=args.library) as session:
++                     mode=args.mode,training=True,max_gap=args.max_gap,pair_age=args.pair_age,library=args.library,scl=model.r_policy in ('scl','scl_blind'),
++                     candidates=getattr(args,'conditional_weight',0)>0) as session:
+             with torch.set_grad_enabled(training):
+                 number=0
+                 while not args.max_epochs_per_route or number<args.max_epochs_per_route:
+@@ -80,11 +91,14 @@
+                     if record is None:break
+                     attempted+=1;number+=1
+                     target,valid=reference.at(record['time'])
+-                    if valid and record['status']==2 and engine.segment_steps>args.warmup_epochs:
++                    if valid and has_filter_state(record['status']) and engine.segment_steps>args.warmup_epochs:
+                         error=enu_rotation(target)@(engine.position.detach().cpu().numpy()-target)
+-                        errors.append(error);statuses.append(2);matched+=1
++                        errors.append(error);statuses.append(record['status']);matched+=1
+                         if training:
+                             losses.append(position_loss(engine.position,target,up_weight=args.up_weight,huber_delta=args.huber_delta))
++                            if getattr(args,'conditional_weight',0)>0 and engine.fixed_position is not None:
++                                losses[-1]=losses[-1]+args.conditional_weight*position_loss(engine.fixed_position,target,up_weight=args.up_weight,huber_delta=args.huber_delta)
++                                candidate_epochs+=1
+                             if engine.pending_nll is not None:nlls.append(engine.pending_nll)
+                     if number%args.sequence_length==0:flush()
+                 flush()
+@@ -92,7 +106,7 @@
+     if not matched:
+         raise ValueError('zero supervised FLOAT epochs: check GPST/frame, reference validity/overlap, warmup and raw observations')
+     metrics=summarize(errors,statuses,attempted=attempted)
+-    metrics.update(optimizer_steps=steps,native_float_updates=updates,
++    metrics.update(conditional_supervised_epochs=candidate_epochs,optimizer_steps=steps,native_float_updates=updates,
+                    max_native_tape_state_difference=max_dx,max_native_tape_cov_difference=max_dp,
+                    mean_preclip_gradient_norm=float(np.mean(grad_norms)) if grad_norms else None,
+                    mean_training_objective=float(np.mean(loss_values)) if loss_values else None)
+@@ -100,35 +114,72 @@
+     metrics['selection_weighted_rmse_m']=float(np.sqrt(np.mean(e[:,0]**2+e[:,1]**2+args.up_weight*e[:,2]**2)))
+     return metrics
+ 
++def has_filter_state(status):
++    """States exported by the continuous native relative filter.
++
++    RTKLIB labels a successful update with fewer than four valid phase satellites
++    as SOLQ_DGPS (4). Its position is still rtk->x and has a differentiable tape.
++    SOLQ_SINGLE (5) is independent SPP and must NOT be given a fictitious gradient.
++    """
++    return int(status) in (2,4)
++
++
+ def train(args):
+     for name in ('epochs','sequence_length','threads'):
+         if getattr(args,name)<1:raise ValueError(f'{name} must be positive')
+     if args.warmup_epochs<0 or args.max_epochs_per_route<0:raise ValueError('epoch limits cannot be negative')
+     for name in ('learning_rate','gradient_clip','up_weight','max_gap','reference_max_gap'):
+         if not math.isfinite(getattr(args,name)) or getattr(args,name)<=0:raise ValueError(f'{name} must be positive and finite')
+-    for name in ('nll_weight','reg_weight','huber_delta'):
+-        if not math.isfinite(getattr(args,name)) or getattr(args,name)<0:raise ValueError(f'{name} cannot be negative/nonfinite')
++    if getattr(args,'gradient_stride',1)<1:raise ValueError('gradient_stride must be positive')
++    for name in ('nll_weight','reg_weight','huber_delta','conditional_weight','smooth_weight'):
++        if not math.isfinite(getattr(args,name,0)) or getattr(args,name,0)<0:raise ValueError(f'{name} cannot be negative/nonfinite')
++    if not math.isfinite(args.selection_min_improvement) or not 0<=args.selection_min_improvement<1:
++        raise ValueError('selection minimum must be in [0,1)')
++    if not math.isfinite(args.selection_fix_threshold) or args.selection_fix_threshold<=0:
++        raise ValueError('selection fix threshold must be positive')
+     routes=load_manifest(args.manifest,allow_training_only=args.allow_training_only)
+     torch.set_num_threads(args.threads);torch.manual_seed(args.seed);np.random.seed(args.seed)
+     if args.init:
+         model,meta=checkpoint_load(args.init,args.device)
+         if meta['max_gap']!=args.max_gap:raise ValueError('--max-gap differs from initialized checkpoint')
+-    else:model=QRModel(args.q_limit,args.r_limit).double().to(args.device)
++        if args.phase_guard_cap is not None:
++            if model.r_policy!='code_guard' or not math.isfinite(args.phase_guard_cap) or not 1<=args.phase_guard_cap<=100:
++                raise ValueError('phase guard override needs code_guard and a cap in [1,100]')
++            model.r.phase_cap=args.phase_guard_cap
++    else:model=QRModel(args.q_limit,args.r_limit,r_policy=args.r_policy,
++        guard_anchor=args.guard_anchor,guard_width=args.guard_width,
++        phase_guard_cap=args.phase_guard_cap if args.phase_guard_cap is not None else 1.,
++        evidence_threshold=getattr(args,'evidence_threshold',2.),evidence_width=getattr(args,'evidence_width',4.)).double().to(args.device)
+     output=Path(args.output).resolve();output.mkdir(parents=True,exist_ok=False)
+     optimizers={name:torch.optim.Adam(getattr(model,name).parameters(),lr=args.learning_rate) for name in ('q','r')}
+     metadata={'method':'live native conditional-first-order FLOAT differentiation',
+         'gradient_stops':['discrete selection/gating/reset choices','local H','causal features','coordinate rotations'],
+         'numerics':'native Cholesky/Joseph; compare against stable off baseline as well as legacy',
+         'reference_role':'supervision only; never passed to native inference',
+-        'training_ambiguity_resolution':'disabled only during training; original AR retained in replay',
+-        'selection':'held-out validation' if routes['validation'] else 'training-only: no generalization evidence',
++        'training_ambiguity_resolution':'Continuous FLOAT/DGPS native filter states; SINGLE fallback excluded;  read-only native LAMBDA candidate auxiliary when enabled; original AR/hold retained in replay',
++        'auxiliary_gradient':'fixed-candidate conditional derivative; NOT derivative of integer search/hold switching',
++        'selection':('native complete-RTK gate against identity baseline' if args.selection=='rtk-safe' else 'held-out FLOAT validation') if routes['validation'] else 'training-only: no generalization evidence',
+         'provenance':args.provenance,'arguments':vars(args),
+         'manifest':json.loads(Path(args.manifest).read_text(encoding='utf-8'))}
+     # argparse handlers are not serialized; no callable/pickle payload in metadata.
+     metadata['arguments']={k:v for k,v in vars(args).items() if not callable(v)}
+     (output/'run.json').write_text(json.dumps(metadata,indent=2,default=str,allow_nan=False)+'\n')
+-    best=float('inf')
++    safe=args.selection=='rtk-safe' and bool(routes['validation'])
++    best=float('inf');baseline=None;selected_epoch=None
++    if safe:
++        # Identity competition is the ORIGINAL R/Q, including phase cap=1.
++        identity=QRModel(model.q.limit,model.r.limit,r_policy=model.r_policy,
++            guard_anchor=getattr(model.r,'anchor',40.),guard_width=getattr(model.r,'width',10.)).double().to(args.device)
++        baseline=native_validation(identity,routes['validation'],args,output/'baseline.qr',baseline=True)
++        best=baseline['aggregate']['rms_3d_m'];selected_epoch=0
++        if best is None or not math.isfinite(best):raise ValueError('no valid native validation baseline')
++        (output/'validation-baseline.json').write_text(json.dumps(baseline,indent=2,allow_nan=False)+'\n')
++        checkpoint_save(output/'best.pt',identity,max_gap=args.max_gap,epoch=0,mode=args.mode)
++        identity.export(output/'best.qr',provenance='untrained',max_gap=args.max_gap)
++        (output/'deployment.json').write_text(json.dumps({'accepted':False,'selected_epoch':0,
++            'reason':'No candidate accepted; best.qr is an untrained identity baseline.'},indent=2)+'\n')
+     for epoch in range(args.epochs):
++        args.round_index=epoch
+         stage=('r' if epoch%2==0 else 'q') if args.mode=='qr' else args.mode
+         for name in ('q','r'):
+             for parameter in getattr(model,name).parameters():parameter.requires_grad_(name==stage)
+@@ -136,11 +187,28 @@
+         validation=dataset_pass(model,routes['validation'],args) if routes['validation'] else None
+         score=(validation or result)['selection_weighted_rmse_m']
+         checkpoint_save(output/'last.pt',model,max_gap=args.max_gap,epoch=epoch+1,mode=args.mode)
++        checkpoint_save(output/f'epoch{epoch+1:02d}.pt',model,max_gap=args.max_gap,epoch=epoch+1,mode=args.mode)
+         model.export(output/'last.qr',provenance=args.provenance,max_gap=args.max_gap)
+-        if score<best:
+-            best=score;checkpoint_save(output/'best.pt',model,max_gap=args.max_gap,epoch=epoch+1,mode=args.mode)
++        model.export(output/f'epoch{epoch+1:02d}.qr',provenance=args.provenance,max_gap=args.max_gap)
++        decision=None;native=None
++        if safe:
++            native=native_validation(model,routes['validation'],args,output/'candidate.qr')
++            decision=deployment_decision(baseline,native,min_improvement=args.selection_min_improvement)
++            score=native['aggregate']['rms_3d_m']
++        if score is not None and score<best and (not safe or decision['accepted']):
++            best=score;selected_epoch=epoch+1
++            checkpoint_save(output/'best.pt',model,max_gap=args.max_gap,epoch=epoch+1,mode=args.mode)
+             model.export(output/'best.qr',provenance=args.provenance,max_gap=args.max_gap)
+-        row={'epoch':epoch+1,'stage':stage,'train':result,'validation':validation,'best_selection_rmse_m':best}
++            (output/'deployment.json').write_text(json.dumps({'accepted':bool(safe),
++                'selected_epoch':selected_epoch,'decision':decision,
++                'note':'Validation evidence only, not a general guarantee.'},indent=2,allow_nan=False)+'\n')
++        row={'epoch':epoch+1,'stage':stage,'train':result,'validation':validation,
++             'native_validation':native,'deployment_decision':decision,
++             'best_selection_rmse_m':best,'selected_epoch':selected_epoch}
+         with (output/'history.jsonl').open('a',encoding='utf-8') as f:f.write(json.dumps(row,allow_nan=False)+'\n')
+         print(f"epoch={epoch+1} stage={stage} supervised={result['matched_epochs']} steps={result['optimizer_steps']} selection_rmse={score:.6f}m",flush=True)
++    if safe and selected_epoch==0:
++        print('NO_CANDIDATE_ACCEPTED: best.qr is untrained identity, not a learned improvement.',flush=True)
++    if not safe:
++        print('FLOAT/debug selection only: native RTK acceptance has not been established.',flush=True)
+     return output
+--- a/research/learned_qr/src/learned_qr.h
++++ b/research/learned_qr/src/learned_qr.h
+@@ -24,6 +24,8 @@
+ typedef struct {
+     qr_net q, r;
+     double qlimit, rlimit, max_gap;
++    int rpolicy; /* V1=0 legacy, V2=1 CN0 guard, V3=2 consistency/3 blind */
++    double guard_anchor,guard_width,phase_cap;
+     int provenance; /* 0=untrained, 1=caller-declared real trained, 2=synthetic */
+ } qr_model;
+ 
+@@ -62,12 +64,20 @@
+     memset(m,0,sizeof(*m));
+     ok=fscanf(f,"%39s %d %lf %lf %lf",magic,&m->provenance,
+               &m->qlimit,&m->rlimit,&m->max_gap)==5;
+-    ok=ok && strcmp(magic,"RTKLIB_QR_V1")==0 &&
++    ok=ok && (strcmp(magic,"RTKLIB_QR_V1")==0 || strcmp(magic,"RTKLIB_QR_V2")==0 || strcmp(magic,"RTKLIB_QR_V3")==0) &&
+        m->provenance>=0 && m->provenance<=2 &&
+        (m->provenance==1 || allow_test) &&
+        isfinite(m->qlimit) && m->qlimit>1 && m->qlimit<=100 &&
+        isfinite(m->rlimit) && m->rlimit>1 && m->rlimit<=1e6 &&
+        isfinite(m->max_gap) && m->max_gap>0 && m->max_gap<=3600;
++    if (ok && (strcmp(magic,"RTKLIB_QR_V2")==0 || strcmp(magic,"RTKLIB_QR_V3")==0)) {
++        ok=fscanf(f,"%d %lf %lf %lf",&m->rpolicy,&m->guard_anchor,&m->guard_width,&m->phase_cap)==4;
++        ok=ok && ((strcmp(magic,"RTKLIB_QR_V2")==0 && m->rpolicy==1) ||
++                  (strcmp(magic,"RTKLIB_QR_V3")==0 && (m->rpolicy==2 || m->rpolicy==3))) && isfinite(m->guard_anchor) &&
++            (m->rpolicy==1?m->guard_anchor>=20:m->guard_anchor>0) && m->guard_anchor<=55 && isfinite(m->guard_width) &&
++            m->guard_width>=1 && m->guard_width<=30 && isfinite(m->phase_cap) &&
++            m->phase_cap>=1 && m->phase_cap<=100 && (m->rpolicy<2 || m->phase_cap==1.);
++    }
+     if (ok) ok=qr_read_net(f,&m->q,QR_QDIM,2) && qr_read_net(f,&m->r,QR_RDIM,1);
+     if (ok && fscanf(f," %c",&extra)==1) ok=0; /* reject extra/corrupt content */
+     fclose(f);
+@@ -96,6 +106,34 @@
+         if (!isfinite(z)) {out[0]=1; if(net->output==2) out[1]=1; return 0;}
+         out[i]=exp(log(limit)*tanh(z));
+     }
++    return 1;
++}
++
++/* Versioned policy: exactly the same transform as the Torch model. */
++static inline int qr_model_forward(const qr_model *m,int isq,const double *x,double *out)
++{
++    int i,j,k=(QR_WINDOW-1)*(QR_RDIM+1);
++    double gate=0.0,cn0,d,xx[QR_INPUT_MAX];const double *input=x;
++    if(!isq && m->rpolicy==3){memcpy(xx,x,sizeof(double)*m->r.input);
++        for(i=0;i<QR_WINDOW;i++) { for(j=8;j<=10;j++)xx[i*(QR_RDIM+1)+j]=0.; }
++        input=xx;
++    }
++    int ok=qr_forward(isq?&m->q:&m->r,input,isq?m->qlimit:m->rlimit,out);
++    if (!ok || isq || m->rpolicy==0) return ok;
++    if (x[k+QR_RDIM]<=0.5) {out[0]=1.;return 1;}
++    if(m->rpolicy>=2) {
++        if(x[k+3]<.5){out[0]=1.;return 1;}
++        d=fmax(expm1(fmin(8.,fabs(x[k+8]))),expm1(fmin(8.,fabs(x[k+9]))));
++        gate=m->rpolicy==3?1.:fmin(1.,fmax(0.,(d-m->guard_anchor)/m->guard_width));
++        out[0]=1.+gate*fmax(out[0]-1.,0.);return 1;
++    }
++    for(i=0;i<2;i++) {
++        cn0=40.+10.*x[k+i];
++        d=cn0>0.?(m->guard_anchor-cn0)/m->guard_width:0.;
++        gate=fmax(gate,d);
++    }
++    gate=fmin(1.,fmax(0.,gate));
++    out[0]=1.+gate*(x[k+3]>.5?fmax(out[0]-1.,0.):m->phase_cap-1.);
+     return 1;
+ }
+ 
+--- a/research/learned_qr/src/learned_qr_adapter.h
++++ b/research/learned_qr/src/learned_qr_adapter.h
+@@ -15,6 +15,9 @@
+     qr_callback callback;
+     void *user;
+     int failed;
++    int observe_candidates, observe_fixed;
++    double innovation[MAXSAT][NFREQ];
++    struct { double t,mp0,p,d; unsigned signal; int valid,mpvalid; } evidence[MAXSAT][NFREQ];
+     FILE *log;
+ } qr_rtk_context;
+ 
+@@ -102,6 +105,8 @@
+ {
+     qr_rtk_context *c=(qr_rtk_context*)context;
+     if(!c) return;
++    memset(c->evidence,0,sizeof(c->evidence));
++    memset(c->innovation,0,sizeof(c->innovation));
+     memset(&c->q,0,sizeof(c->q));
+     memset(c->r,0,MAXSAT*2*NFREQ*sizeof(qr_history));
+ }
+@@ -144,8 +149,7 @@
+             }
+         }
+         else if(c->loaded && (c->mode & (isq?1:2)))
+-            qr_forward(isq?&c->model.q:&c->model.r,flat,
+-                       isq?c->model.qlimit:c->model.rlimit,h->cached);
++            qr_model_forward(&c->model,isq,flat,h->cached);
+         h->cached_valid=1;
+     }
+     factors[0]=h->cached[0];factors[1]=h->cached[1];
+@@ -173,6 +177,35 @@
+     f[7]=log1p(sqrt(fmax(variance,0)));f[8]=rtk->sol.ns/40.0;f[9]=rtk->sol.stat/6.0;
+     qr_capture(c,&c->q,1,qr_seconds(rtk->sol.time),0,0,f,0,0,s);
+     if(c->mode&1) {Q[0]*=s[0];Q[4]*=s[0];Q[8]*=s[1];}
++}
++
++/* Current SD code innovations: remove a per-system clock with a median,
++ * normalize by predicted geometry and ORIGINAL code noise, never a learned R.
++ * No reference trajectory or future observation is consumed here. */
++static inline void qr_prepare_evidence(rtk_t *rtk,const int *sat,const double *y,
++    const double *e,const double *azel,const int *iu,const int *ir,int ns,int nf,const double *P)
++{
++    qr_rtk_context *c=(qr_rtk_context*)rtk->learned_qr;
++    double sorted[MAXSAT],med,var,vp,a,b,v; int i,j,f,sys,n,q;
++    if(!c || c->model.rpolicy<2) return;
++    memset(c->innovation,0,sizeof(c->innovation));
++    for(sys=0;sys<7;sys++) for(f=0;f<nf;f++) {
++        n=0;
++        for(i=0;i<ns;i++) if(qr_sys_index(rtk->ssat[sat[i]-1].sys)==sys &&
++            y[f+nf+iu[i]*nf*2]!=0 && y[f+nf+ir[i]*nf*2]!=0) {
++            sorted[n++]=y[f+nf+iu[i]*nf*2]-y[f+nf+ir[i]*nf*2];
++        }
++        if(n<4) continue;
++        for(i=1;i<n;i++) {v=sorted[i];j=i;while(j>0 && sorted[j-1]>v){sorted[j]=sorted[j-1];j--;}sorted[j]=v;}
++        med=n%2?sorted[n/2]:.5*(sorted[n/2-1]+sorted[n/2]);
++        for(i=0;i<ns;i++) if(qr_sys_index(rtk->ssat[sat[i]-1].sys)==sys &&
++            y[f+nf+iu[i]*nf*2]!=0 && y[f+nf+ir[i]*nf*2]!=0) {
++            a=rtk->opt.eratio[f]*rtk->opt.err[1];b=rtk->opt.eratio[f]*rtk->opt.err[2];
++            var=2*(a*a+b*b/fmax(.04,pow(sin(azel[1+iu[i]*2]),2)));vp=0;
++            if(P) for(j=0;j<3;j++)for(q=0;q<3;q++)vp+=e[j+iu[i]*3]*P[j+q*rtk->nx]*e[q+iu[i]*3];
++            c->innovation[sat[i]-1][f]=(y[f+nf+iu[i]*nf*2]-y[f+nf+ir[i]*nf*2]-med)/sqrt(fmax(1.,var+vp));
++        }
++    }
+ }
+ 
+ /* SD code/phase variances are already in m^2 in varerr(). Do not multiply by
+@@ -208,6 +241,38 @@
+     feature[8]=qr_signed_log(code?obs->Pstd[frq]:obs->Lstd[frq]);
+     feature[9]=((obs->LLI[frq]|baseobs->LLI[frq])&LLI_HALFC)?1:0;
+     feature[10]=delta;feature[11]=log1p(continuous?h->seen+1:1);
++    if(c->model.rpolicy>=2) {
++        double lam;
++        double f1=FREQL1,f2=FREQL2,gamma=(f1/f2)*(f1/f2),mp,dt,psd,dsd,anom=0.,pd=0.;
++        unsigned mp_signal=((unsigned)obs->code[0]<<24)|((unsigned)obs->code[1]<<16)|((unsigned)baseobs->code[0]<<8)|baseobs->code[1];
++        int mp_slip=((obs->LLI[0]|obs->LLI[1]|baseobs->LLI[0]|baseobs->LLI[1]|rtk->ssat[sat-1].slip[0]|rtk->ssat[sat-1].slip[1])&LLI_SLIP)!=0;
++        int valid=(sys==SYS_GPS && obs->P[frq]!=0 && baseobs->P[frq]!=0 &&
++            obs->L[0]!=0 && obs->L[1]!=0 && baseobs->L[0]!=0 && baseobs->L[1]!=0 && frq<2);
++        lam=CLIGHT/(frq==0?f1:f2);
++        feature[8]=qr_signed_log(c->innovation[sat-1][frq]);feature[9]=feature[10]=0.;
++        if(valid) {
++            psd=obs->P[frq]-baseobs->P[frq];dsd=obs->D[frq]-baseobs->D[frq];
++            mp=psd-lam*(obs->L[frq]-baseobs->L[frq])-
++              2.*(frq==0?1.:gamma)/(gamma-1.)*(CLIGHT/f1*(obs->L[0]-baseobs->L[0])-CLIGHT/f2*(obs->L[1]-baseobs->L[1]));
++            dt=t-c->evidence[sat-1][frq].t;
++            if(!c->evidence[sat-1][frq].valid || dt>c->model.max_gap || dt<0 ||
++              c->evidence[sat-1][frq].signal!=mp_signal || (mp_slip && dt>0)) {
++                c->evidence[sat-1][frq].mp0=mp;c->evidence[sat-1][frq].valid=1;
++            }
++            else {
++                anom=(mp-c->evidence[sat-1][frq].mp0)/sqrt(fmax(1.,code?native_variance:1.));
++                if(dt>0 && obs->D[frq]!=0 && baseobs->D[frq]!=0)
++                    pd=(psd-c->evidence[sat-1][frq].p+.5*lam*(dsd+c->evidence[sat-1][frq].d)*dt)/sqrt(fmax(1.,code?native_variance:1.));
++            }
++            /* Only code consumes/updates the anchor. Carrier pass must not overwrite it. */
++            if(code) {
++                if(dt>0 && dt<=c->model.max_gap) c->evidence[sat-1][frq].mp0+=fmin(1.,dt/600.)*fmax(-1.,fmin(1.,mp-c->evidence[sat-1][frq].mp0));
++                c->evidence[sat-1][frq].t=t;c->evidence[sat-1][frq].p=psd;c->evidence[sat-1][frq].d=dsd;
++                c->evidence[sat-1][frq].signal=mp_signal;
++            }
++            feature[9]=qr_signed_log(anom);feature[10]=qr_signed_log(pd);
++        } else if(code) c->evidence[sat-1][frq].valid=0;
++    }
+     qr_capture(c,h,0,t,signature,slip,feature,sat,code*NFREQ+frq,factor);
+     qr_sd_event(c,sat,code*NFREQ+frq,native_variance,(c->mode&2)?factor[0]:1.0);
+     return (c->mode&2)?native_variance*factor[0]:native_variance;
+--- a/research/learned_qr/src/qr_bridge.c
++++ b/research/learned_qr/src/qr_bridge.c
+@@ -13,7 +13,7 @@
+     prcopt_t opt;
+     rtk_t rtk;
+     qr_model model;
+-    int mode,loaded,training,initialized,failed,first,stable;
++    int mode,loaded,training,initialized,failed,first,stable,observe_candidates,observe_fixed,rpolicy;
+     int *ri,*bi,nr,nb,cursor;
+     double max_gap,pair_age;
+     gtime_t previous;
+@@ -47,6 +47,8 @@
+     c->r=(qr_history*)calloc(MAXSAT*2*NFREQ,sizeof(qr_history));
+     if(!c->r) {free(c);return 0;}
+     c->mode=s->mode;c->loaded=s->loaded;c->model=s->model;c->stable=s->stable;
++    c->observe_candidates=s->observe_candidates;c->observe_fixed=s->observe_fixed;
++    if(!s->loaded)c->model.rpolicy=s->rpolicy;
+     c->model.max_gap=s->max_gap;s->rtk.learned_qr=c;
+     s->first=1;
+     return 1;
+@@ -59,6 +61,33 @@
+     s->stable=enabled!=0;
+     if(s->initialized && s->rtk.learned_qr)
+         ((qr_rtk_context*)s->rtk.learned_qr)->stable=s->stable;
++    return 0;
++}
++EXPORT int qr_set_learning_options(void *session,int policy,int candidates,int fixed)
++{
++    qr_session *s=(qr_session*)session;qr_rtk_context *c;
++    if(!s || policy<0 || policy>3 || s->cursor!=0)return -1;
++    s->rpolicy=policy;s->observe_candidates=candidates;s->observe_fixed=fixed;
++    c=(qr_rtk_context*)s->rtk.learned_qr;c->observe_candidates=candidates;c->observe_fixed=fixed;
++    if(!s->loaded)c->model.rpolicy=policy;
++    return 0;
++}
++/* Replace weights at an epoch boundary WITHOUT resetting the filter or history.
++ * A NULL path selects live Python inference, preserving the last model schema. */
++EXPORT int qr_reload_model(void *session,const char *path,int allow_test,int candidates,
++    char *error,int error_size)
++{
++    qr_session *s=(qr_session*)session;qr_rtk_context *c;qr_model m;int i;
++    if(!s || s->failed)return qr_error(error,error_size,"invalid reload session");
++    c=(qr_rtk_context*)s->rtk.learned_qr;
++    if(path && *path){
++        if(!qr_load(&m,path,allow_test) || fabs(m.max_gap-s->max_gap)>1e-9)
++            return qr_error(error,error_size,"reload model/schema/gap invalid");
++        s->model=m;s->rpolicy=m.rpolicy;s->loaded=1;c->model=m;c->loaded=1;
++    }else{s->loaded=0;c->loaded=0;c->model.rpolicy=s->rpolicy;}
++    s->observe_candidates=candidates;c->observe_candidates=candidates;
++    c->q.cached_valid=0;
++    for(i=0;i<MAXSAT*2*NFREQ;i++)c->r[i].cached_valid=0;
+     return 0;
+ }
+ EXPORT void qr_close(void *session)
+--- a/research/learned_qr/src/qr_bridge.h
++++ b/research/learned_qr/src/qr_bridge.h
+@@ -7,6 +7,8 @@
+ extern "C" {
+ #endif
+ EXPORT int qr_bridge_abi(void);
++EXPORT int qr_reload_model(void *session,const char *path,int allow_test,int candidates,char *error,int error_size);
++EXPORT int qr_set_learning_options(void *session,int policy,int candidates,int fixed);
+ EXPORT int qr_set_stable(void *session,int enabled);
+ EXPORT void *qr_open(const char *config,const char *rover,const char *base,
+                      const char **navfiles,int nnav,const char *model,int mode,
+--- a/research/learned_qr/src/qr_trace.h
++++ b/research/learned_qr/src/qr_trace.h
+@@ -10,7 +10,7 @@
+     QR_BEGIN=1, QR_INIT=2, QR_TRANSITION=3, QR_QADD=4,
+     QR_INFER_Q=5, QR_INFER_R=6, QR_SD_VARIANCE=7, QR_DIAG=8,
+     QR_ZERO=9, QR_OFFSET=10, QR_PRIOR=11, QR_FILTER=12,
+-    QR_ACCEPT=13, QR_END=14
++    QR_ACCEPT=13, QR_END=14, QR_CANDIDATE=15, QR_FIXED_RESULT=16
+ };
+ typedef struct {
+     int kind, nx, n, m;
+--- a/research/learned_qr/tests/test_adapter.py
++++ b/research/learned_qr/tests/test_adapter.py
+@@ -13,6 +13,9 @@
+ #include <stdlib.h>
+ #include <string.h>
+ #define NFREQ 3
++#define FREQL1 1575.42e6
++#define FREQL2 1227.60e6
++#define CLIGHT 299792458.0
+ #define MAXSAT 8
+ #define PMODE_DGPS 1
+ #define PMODE_KINEMA 2
+@@ -28,9 +31,9 @@
+ #define SYS_CMP 32
+ #define SYS_IRN 64
+ typedef struct {long time;double sec;} gtime_t;
+-typedef struct {gtime_t time;unsigned char code[3],LLI[3];float Pstd[3],Lstd[3];} obsd_t;
+-typedef struct {int mode,dynamics,ionoopt,nf;} prcopt_t;
+-typedef struct {unsigned char slip[3];} ssat_t;
++typedef struct {gtime_t time;unsigned char code[3],LLI[3];float Pstd[3],Lstd[3]; double P[3],L[3],D[3];} obsd_t;
++typedef struct {int mode,dynamics,ionoopt,nf; double eratio[3],err[8];} prcopt_t;
++typedef struct {int sys; unsigned char slip[3];} ssat_t;
+ typedef struct {gtime_t time;int ns,stat;} sol_t;
+ typedef struct {void *learned_qr;prcopt_t opt;sol_t sol;double *x,*P,tt;int nx;ssat_t ssat[MAXSAT];} rtk_t;
+ static double time2gpst(gtime_t t,int*w) {*w=0;return t.time+t.sec;}
+--- a/research/learned_qr/tests/test_cli.py
++++ b/research/learned_qr/tests/test_cli.py
+@@ -33,7 +33,7 @@
+         rover=str(args['rover']),base=str(args['base']),nav=[str(p) for p in args['nav']],reference=str(ref))]}))
+     out=tmp_path/'trained'
+     command=[sys.executable,'-m','qrlearn.cli','train','--manifest',str(manifest),'--config',str(args['config']),
+-        '--output',str(out),'--epochs','2','--sequence-length','4','--warmup-epochs','1',
++        '--output',str(out),'--r-policy','unconstrained','--selection','float','--epochs','2','--sequence-length','4','--warmup-epochs','1',
+         '--max-epochs-per-route','8','--max-gap','31','--allow-training-only','--provenance','synthetic']
+     subprocess.run(command,cwd=KIT,check=True,capture_output=True,text=True)
+     assert (out/'best.qr').exists() and (out/'history.jsonl').exists()
+@@ -67,3 +67,31 @@
+                '--coordinate-format','xyz','--time-format','week-tow'])
+     assert rc==2
+     assert not output.exists(), 'failed conversion must not leave a reference CSV'
++
++
++def test_rejected_native_candidate_keeps_identity_checkpoint(tmp_path):
++    """Solver-derived labels are ONLY a software rejection test, not truth."""
++    import shutil
++    m=cli_module();kw=raw_kwargs();copy=tmp_path/'validation.obs'
++    shutil.copyfile(kw['rover'],copy);records=[]
++    with Session(**kw,training=False,mode='off') as sess:
++        for _ in range(8):records.append(sess.step())
++    def reference(path,offset):
++        rows=['t_gpst_s,x_m,y_m,z_m,valid']
++        for rec in records:rows.append(','.join(map(str,[rec['time'],*(rec['position']+offset),1])))
++        path.write_text('\n'.join(rows)+'\n')
++    tr=tmp_path/'tr.csv';va=tmp_path/'va.csv';reference(tr,.2);reference(va,0.)
++    def route(name,obs,ref):return dict(id=name,rover=str(obs),base=str(kw['base']),
++                                        nav=list(map(str,kw['nav'])),reference=str(ref))
++    manifest=tmp_path/'m.json';manifest.write_text(json.dumps({'train':[route('tr',kw['rover'],tr)],
++                                                             'validation':[route('va',copy,va)]}))
++    out=tmp_path/'out'
++    rc=m.main(['train','--manifest',str(manifest),'--config',str(kw['config']),'--output',str(out),
++        '--epochs','1','--sequence-length','4','--warmup-epochs','1','--max-epochs-per-route','8',
++        '--max-gap','31','--provenance','synthetic'])
++    assert rc==0
++    assert json.loads((out/'deployment.json').read_text())['accepted'] is False
++    assert torch.load(out/'best.pt',map_location='cpu',weights_only=True)['epoch']==0
++    assert (out/'best.qr').read_text().startswith('RTKLIB_QR_V2 0 ')
++
++    assert json.loads((out/"run.json").read_text())["selection"]=="native complete-RTK gate against identity baseline"
+--- /dev/null
++++ b/research/learned_qr/tests/test_guard_policy.py
+@@ -0,0 +1,84 @@
++import ctypes as C
++import inspect
++from pathlib import Path
++import subprocess
++import numpy as np
++import pytest
++import torch
++import qrlearn.model as M
++
++
++def hist(cn0=30.,code=True,base=45.):
++    h=torch.zeros(10,13,dtype=torch.float64);h[:,-1]=1
++    h[:,0]=(cn0-40)/10;h[:,1]=(base-40)/10;h[:,3]=int(code)
++    return h
++
++
++def model(cap=1.):
++    assert hasattr(M,'GuardedCodeNet'), 'guard policy missing'
++    return M.QRModel(r_policy='code_guard',phase_guard_cap=cap).double()
++
++
++def test_identity_learns_but_no_shrinking_or_clean_reweighting():
++    m=model();h=hist();assert m.r(h).item()==1
++    m.r(h).backward();assert m.r.fc2.bias.grad.abs().sum()>0
++    with torch.no_grad():m.r.fc2.bias.fill_(.4)
++    for h in (hist(code=False),hist(45),hist(0,base=0)):
++        assert m.r(h).item()==1
++    assert m.r(hist()).item()>1
++    with torch.no_grad():m.r.fc2.bias.fill_(-.4)
++    assert m.r(hist()).item()==1
++
++
++def test_phase_guard_and_checkpoint():
++    m=model(4.)
++    assert m.r(hist(30,False)).item()==4
++    assert m.r(hist(35,False)).item()==2.5
++    assert m.r(hist(45,False)).item()==1
++    m.r(hist(30,False)).backward();assert m.r.fc2.bias.grad.abs().sum()==0
++    with pytest.raises(ValueError):model(0)
++
++
++def test_position_model_numerical_gradient():
++    m=model()
++    with torch.no_grad():m.r.fc2.bias.fill_(.2)
++    m.r(hist()).backward();grad=m.r.fc2.bias.grad.item();eps=1e-6
++    with torch.no_grad():
++        m.r.fc2.bias.add_(eps);a=m.r(hist()).item()
++        m.r.fc2.bias.sub_(2*eps);b=m.r(hist()).item()
++    assert grad==pytest.approx((a-b)/(2*eps),rel=1e-6)
++
++
++@pytest.mark.parametrize('cap',[1.,4.])
++def test_export_c_pytorch_parity_and_header_validation(tmp_path,cap):
++    m=model(cap);torch.manual_seed(19)
++    with torch.no_grad():
++        m.r.fc2.weight.normal_(0,.15);m.r.fc2.bias.fill_(.4)
++        m.q.fc2.weight.normal_(0,.05)
++    p=tmp_path/'m.qr';m.export(p,provenance='synthetic')
++    c=tmp_path/'wrap.c';c.write_text('''#include "learned_qr.h"
++int evaluate(const char *p,int q,const double *x,double *y){qr_model m;
++if(!qr_load(&m,p,1)) return 0;return qr_model_forward(&m,q,x,y);}''')
++    include=Path(__file__).resolve().parents[1]/'src'
++    subprocess.run(['cc','-std=c99','-shared','-fPIC','-O2','-Wall','-Wextra',
++        '-I'+str(include),str(c),'-lm','-o',str(tmp_path/'w.so')],check=True)
++    lib=C.CDLL(str(tmp_path/'w.so'));D=C.POINTER(C.c_double)
++    lib.evaluate.argtypes=[C.c_char_p,C.c_int,D,D]
++    for code in (False,True):
++        for cn0 in (0.,25.,35.,40.,50.):
++            h=hist(cn0,code);x=h.numpy();out=np.zeros(2)
++            assert lib.evaluate(str(p).encode(),0,x.ctypes.data_as(D),out.ctypes.data_as(D))==1
++            assert out[0]==pytest.approx(m.r(h).item(),rel=3e-12,abs=3e-12)
++    q=np.random.default_rng(10).normal(size=(10,11));out=np.zeros(2)
++    assert lib.evaluate(str(p).encode(),1,q.ctypes.data_as(D),out.ctypes.data_as(D))==1
++    np.testing.assert_allclose(out,m.q(torch.tensor(q)).detach().numpy(),rtol=3e-12,atol=3e-12)
++    good=p.read_text();p.write_text(good.replace(f'1 40 10 {cap:g}\n',f'1 nan 10 {cap:g}\n'))
++    assert lib.evaluate(str(p).encode(),0,x.ctypes.data_as(D),out.ctypes.data_as(D))==0
++
++
++def test_checkpoint_roundtrip(tmp_path):
++    from qrlearn.training import checkpoint_save,checkpoint_load
++    m=model(4);p=tmp_path/'m.pt';checkpoint_save(p,m,max_gap=30,epoch=1,mode='qr')
++    other,_=checkpoint_load(p)
++    assert other.r_policy=='code_guard' and other.r.phase_cap==4
++    torch.testing.assert_close(other.r(hist()),m.r(hist()))
+--- /dev/null
++++ b/research/learned_qr/tests/test_scl.py
+@@ -0,0 +1,190 @@
++from pathlib import Path
++import ctypes as ct
++import numpy as np
++import pytest
++import torch
++from qrlearn.model import QRModel
++from test_live import session_kwargs,ROOT,KIT
++
++
++def test_conditional_objective_has_correct_fixed_candidate_gradient():
++    import importlib.util
++    assert importlib.util.find_spec('qrlearn.scl') is not None,'SCL conditional objective not implemented'
++    from qrlearn.scl import condition_position
++    torch.manual_seed(11)
++    x=torch.tensor([1.,2.,3.,10.2,15.8,20.4],dtype=torch.float64,requires_grad=True)
++    L=torch.randn(6,6,dtype=torch.float64);P=(L@L.T+torch.eye(6)).requires_grad_()
++    pairs=torch.tensor([[3,4],[3,5]]);a=torch.tensor([-6.,-10.],dtype=torch.float64,requires_grad=True)
++    def f(x,P):return condition_position(x,P,pairs,a)
++    assert torch.autograd.gradcheck(f,(x,P),eps=1e-6,atol=1e-5,rtol=1e-4)
++    f(x,P).square().sum().backward()
++    assert a.grad is None, 'integer search output must be detached'
++    assert x.grad.abs().sum()>0 and P.grad.abs().sum()>0
++
++
++def test_scl_evidence_not_cn0_controls_inflation():
++    from qrlearn.model import QRModel
++    m=QRModel(r_policy='scl').double()
++    with torch.no_grad():m.r.fc2.bias.fill_(.15)
++    h=torch.zeros(10,13,dtype=torch.float64);h[-1,-1]=1;h[-1,3]=1
++    # V3 f8/f9 are consistency evidence, never a reference-derived label.
++    h[-1,8]=np.log1p(12.)
++    hi=h.clone();hi[-1,:2]=1.2
++    lo=h.clone();lo[-1,:2]=-1.2
++    assert m.r(hi).item()>1 and m.r(lo).item()>1
++    clean=lo.clone();clean[-1,8:10]=0
++    assert m.r(clean).item()==1.
++    phase=hi.clone();phase[-1,3]=0
++    assert m.r(phase).item()==1.
++
++
++def test_scl_native_export_agrees_with_torch(tmp_path):
++    from qrlearn.scl import CompactTrace
++    from qrlearn.native import Session
++    m=QRModel(r_policy='scl').double()
++    with torch.no_grad():m.q.fc2.bias.fill_(.01);m.r.fc2.bias.fill_(.2)
++    p=tmp_path/'m.qr';m.export(p,provenance='synthetic',max_gap=31)
++    eng=CompactTrace(m);a=[];b=[]
++    with Session(**session_kwargs(),mode='qr',training=True,scl=True,candidates=True) as s:
++        for _ in range(12):a.append(s.step(eng.handle)['position'])
++    with Session(**session_kwargs(),mode='qr',training=True,model=p,allow_test=True) as s:
++        for _ in range(12):b.append(s.step()['position'])
++    np.testing.assert_allclose(a,b,atol=2e-5,rtol=0)
++    assert eng.max_state_discrepancy<.001
++
++
++def test_candidate_observer_does_not_modify_native_solution():
++    from qrlearn.native import Session,array
++    got=[];a=[];b=[]
++    def callback(e):
++        if e.kind==15:
++            pairs=array(e.ix,2*e.n).reshape(e.n,2)
++            x=array(e.x,e.nx);P=array(e.P,e.nx*e.nx).reshape(e.nx,e.nx,order='F')
++            D=np.zeros((e.n,e.nx));D[np.arange(e.n),pairs[:,0]]=1;D[np.arange(e.n),pairs[:,1]]=-1
++            ints=array(e.a,e.n);pos=x[:3]-P[:3]@D.T@np.linalg.solve(D@P@D.T,D@x-ints)
++            np.testing.assert_allclose(pos,array(e.b,3),atol=1e-5,rtol=0);got.append(ints)
++    with Session(**session_kwargs(),training=True,mode='off',candidates=True) as s:
++        for _ in range(15):a.append(s.step(callback)['position'])
++    with Session(**session_kwargs(),training=True,mode='off') as s:
++        for _ in range(15):b.append(s.step()['position'])
++    np.testing.assert_array_equal(a,b)
++    assert len(got)>3
++
++
++def test_compact_tape_matches_dense_and_aux_loss_backprop():
++    from qrlearn.scl import CompactTrace
++    from qrlearn.native import Session
++    from qrlearn.live import TraceEngine
++    torch.manual_seed(8);m=QRModel().double()
++    with torch.no_grad():m.r.fc2.bias.fill_(.025);m.q.fc2.bias.fill_(.015)
++    dense=TraceEngine(m);compact=CompactTrace(m)
++    for engine in (dense,compact):
++        with Session(**session_kwargs(),training=True,mode='qr',candidates=isinstance(engine,CompactTrace)) as s:
++            for _ in range(12):s.step(engine.handle)
++    ids=compact.global_ids
++    torch.testing.assert_close(compact.x,dense.x[ids],atol=1e-5,rtol=0)
++    torch.testing.assert_close(compact.P,dense.P[ids[:,None],ids[None,:]],atol=1e-4,rtol=0)
++    assert len(ids)<100 and compact.fixed_position is not None
++    loss=compact.position.square().sum()*1e-7+compact.fixed_position.square().sum()*1e-7
++    loss.backward()
++    for net in (m.q,m.r):assert sum(p.grad.abs().sum() for p in net.parameters() if p.grad is not None)>0
++
++
++def test_mid_session_model_reload_keeps_state(tmp_path):
++    from qrlearn.native import Session
++    model=QRModel(r_policy='scl').double();p=tmp_path/'identity.qr';model.export(p,provenance='synthetic',max_gap=31)
++    a=[];b=[]
++    with Session(**session_kwargs(),training=True,mode='qr',model=p,allow_test=True) as s:
++        assert hasattr(s,'reload_model'),'state-preserving parameter reload not implemented'
++        for k in range(16):
++            if k==7:s.reload_model(p,allow_test=True)
++            a.append(s.step()['position'])
++    with Session(**session_kwargs(),training=True,mode='qr',model=p,allow_test=True) as s:
++        for k in range(16):b.append(s.step()['position'])
++    np.testing.assert_array_equal(a,b)
++
++
++def test_mp_anchor_resets_when_other_frequency_slips(tmp_path):
++    """L1 multipath combination contains L2; L2-only discontinuities must reset it."""
++    import subprocess
++    from test_adapter import STUB
++    stub=STUB+r'''
++    double evidence_check(int other_slip) {
++      rtk_t *r=(rtk_t*)calloc(1,sizeof(*r));
++      r->opt.mode=2;r->opt.nf=2;r->tt=1;r->nx=9;
++      r->learned_qr=calloc(1,sizeof(qr_rtk_context));
++      qr_rtk_context *ctx=(qr_rtk_context*)r->learned_qr;ctx->model.max_gap=30;ctx->model.rpolicy=2;ctx->r=calloc(MAXSAT*2*NFREQ,sizeof(qr_history));
++      obsd_t o={0},b={0};o.code[0]=b.code[0]=1;o.code[1]=b.code[1]=2;
++      o.P[0]=21000100;b.P[0]=21000000;o.L[0]=110000100;b.L[0]=110000000;o.L[1]=90000100;b.L[1]=90000000;
++      o.time.time=1;qr_apply_r(r,1,SYS_GPS,.7,45,45,1000,0,2,&r->opt,&o,&b,4.);
++      o.time.time=2;o.L[1]+=8;o.LLI[1]=other_slip;
++      qr_apply_r(r,1,SYS_GPS,.7,45,45,1000,0,2,&r->opt,&o,&b,4.);
++      qr_history *h=&ctx->r[NFREQ];double value=h->values[(h->next+QR_WINDOW-1)%QR_WINDOW][9];
++      qr_rtk_destroy(ctx);free(r);return value;
++    }
++    '''
++    p=tmp_path/'e.c';p.write_text(stub);out=tmp_path/'e.so'
++    subprocess.run(['cc','-std=c99','-shared','-fPIC','-I'+str(KIT/'src'),str(p),'-lm','-o',str(out)],check=True)
++    lib=ct.CDLL(str(out));lib.evidence_check.argtypes=[ct.c_int];lib.evidence_check.restype=ct.c_double
++    assert abs(lib.evidence_check(0))>.1
++    assert abs(lib.evidence_check(1))<1e-12
++
++
++def test_qr_candidate_gradient_matches_native_finite_difference(tmp_path):
++    """Two fixed-path EKF updates + given-integer conditioning, not search AD."""
++    import subprocess,math
++    from qrlearn.scl import condition_position
++    stub='#include "rtklib.h"\n#include "qr_filter.h"\nint step(double*x,double*P,const double*H,const double*v,const double*R,int n,int m){return qr_stable_filter(x,P,H,v,R,n,m);}\n'
++    p=tmp_path/'f.c';p.write_text(stub);so=tmp_path/'f.so'
++    subprocess.run(['cc','-O2','-std=c99','-shared','-fPIC','-I'+str(ROOT/'src'),str(p),'-L'+str(ROOT/'lib'),'-lrtklib','-lm','-Wl,-rpath,'+str(ROOT/'lib'),'-o',str(so)],check=True)
++    lib=ct.CDLL(str(so));dp=ct.POINTER(ct.c_double);lib.step.argtypes=[dp]*5+[ct.c_int]*2
++    rng=np.random.default_rng(52);n=12;m=6;B=rng.normal(size=(n,n));P0=B@B.T*.1+np.eye(n)*.2;x0=np.arange(n,dtype=float)+1.3
++    F=np.eye(n);F[np.arange(6),np.arange(6)+3]=.5;F[np.arange(3),np.arange(3)+6]=.125
++    Q=np.diag([0]*6+[.08]*3+[0]*3);H=rng.normal(size=(m,n))*.2;G=rng.normal(size=(m,m));R=G@G.T*.1+np.eye(m)*.4
++    z=H@x0+rng.normal(size=m);pairs=torch.tensor([[9,10],[9,11]]);integer=torch.tensor([-1.,-2.],dtype=torch.float64)
++    def native(q,r):
++        x=x0.copy();P=P0.copy()
++        for _ in range(2):
++            x=np.ascontiguousarray(F@x);P=np.asfortranarray(F@P@F.T+q*Q);hh=np.asfortranarray(H.T);v=np.ascontiguousarray(z-H@x);rr=np.asfortranarray(r*R)
++            assert lib.step(*(a.ctypes.data_as(dp) for a in [x,P,hh,v,rr]),n,m)==0
++        D=np.zeros((2,n));D[:,9]=1;D[0,10]=-1;D[1,11]=-1
++        y=x[:3]-P[:3]@D.T@np.linalg.solve(D@P@D.T,D@x-integer.numpy())
++        return (y*y).sum()+.1*(x[:3]**2).sum()
++    q=torch.tensor(1.2,dtype=torch.float64,requires_grad=True);r=torch.tensor(1.8,dtype=torch.float64,requires_grad=True)
++    t=lambda x:torch.tensor(x,dtype=torch.float64);x=t(x0);P=t(P0);Ft,Ht,Qt,Rt,zt=map(t,[F,H,Q,R,z])
++    for _ in range(2):
++        x=Ft@x;P=Ft@P@Ft.T+q*Qt;S=Ht@P@Ht.T+r*Rt;K=torch.linalg.solve(S,Ht@P).T
++        x=x+K@(zt-Ht@x);A=torch.eye(n)-K@Ht;P=A@P@A.T+K@(r*Rt)@K.T
++    y=condition_position(x,P,pairs,integer);loss=y.square().sum()+.1*x[:3].square().sum();loss.backward()
++    assert loss.item()==pytest.approx(native(1.2,1.8),rel=1e-10)
++    h=1e-5
++    numeric=[(native(1.2+h,1.8)-native(1.2-h,1.8))/(2*h),(native(1.2,1.8+h)-native(1.2,1.8-h))/(2*h)]
++    np.testing.assert_allclose([q.grad.item(),r.grad.item()],numeric,atol=1e-7,rtol=2e-5)
++
++@pytest.mark.parametrize('flag,value,match',[
++ ('--conditional-weight','-1','conditional_weight'),('--smooth-weight','nan','smooth_weight'),
++ ('--gradient-stride','0','gradient_stride')])
++def test_invalid_scl_training_controls_rejected_before_file_access(flag,value,match,tmp_path):
++    from qrlearn.cli import parser
++    from qrlearn.training import train
++    args=parser().parse_args(['train','--manifest',str(tmp_path/'missing.json'),'--config',str(tmp_path/'missing.conf'),'--output',str(tmp_path/'out'),flag,value])
++    with pytest.raises(ValueError,match=match):train(args)
++
++
++def test_v3_rejects_claimed_phase_adaptation(tmp_path):
++    """V3 fixes phase weights; a header must not claim a discarded phase policy."""
++    import subprocess
++    m=QRModel(r_policy='scl').double();p=tmp_path/'bad.qr'
++    m.export(p,provenance='synthetic')
++    text=p.read_text();lines=text.splitlines();fields=lines[1].split();fields[-1]='4';lines[1]=' '.join(fields);p.write_text('\n'.join(lines)+'\n')
++    c=tmp_path/'load.c';c.write_text('#include "learned_qr.h"\nint main(int n,char**v){qr_model m;return qr_load(&m,v[1],1)?0:3;}\n')
++    exe=tmp_path/'load';subprocess.run(['cc','-std=c99','-I'+str(KIT/'src'),str(c),'-lm','-o',str(exe)],check=True)
++    assert subprocess.run([str(exe),str(p)]).returncode==3
++
++
++def test_supervision_includes_native_dgps_filter_updates_not_single_point():
++    from qrlearn import training
++    assert hasattr(training,'has_filter_state'),'native DGPS-filter state supervision is missing'
++    assert training.has_filter_state(2) and training.has_filter_state(4)
++    assert not training.has_filter_state(0) and not training.has_filter_state(5)
++    assert not training.has_filter_state(1),'training remains continuous, not a FIX state graph'
+--- /dev/null
++++ b/research/learned_qr/tests/test_selection_gate.py
+@@ -0,0 +1,37 @@
++import copy
++import importlib.util
++import pytest
++
++
++def get():
++    assert importlib.util.find_spec('qrlearn.selection'), 'native selection missing'
++    from qrlearn.selection import deployment_decision
++    return deployment_decision
++
++
++def baseline():
++    return dict(aggregate={'rms_3d_m':2.},routes={'a':dict(attempted_epochs=10,matched_epochs=10,
++       solution_available_epochs=10,matched_times=list(range(10)),available_times=list(range(10)),
++       rms_3d_m=2.,p95_3d_m=3.,solution_fixed_fraction=.8,fixed_large_error_proxy_count=0)})
++
++
++def test_identity_and_worse_never_win():
++    f=get();b=baseline();c=copy.deepcopy(b);c['aggregate']['rms_3d_m']=3
++    assert not f(b,b)['accepted'];assert not f(b,c)['accepted']
++
++
++@pytest.mark.parametrize('key,value',[('rms_3d_m',2.5),('p95_3d_m',3.5),
++ ('solution_fixed_fraction',.6),('fixed_large_error_proxy_count',1),
++ ('matched_times',list(range(1,11))),('solution_available_epochs',9)])
++def test_aggregate_gain_cannot_hide_regression(key,value):
++    f=get();b=baseline();c=copy.deepcopy(b);c['aggregate']['rms_3d_m']=1.5
++    c['routes']['a'][key]=value
++    assert not f(b,c)['accepted']
++
++
++def test_good_and_empty_validation():
++    f=get();b=baseline();c=copy.deepcopy(b);c['aggregate']['rms_3d_m']=1.5
++    c['routes']['a'].update(rms_3d_m=1.5,p95_3d_m=2.5)
++    assert f(b,c)['accepted']
++    assert not f(b,dict(aggregate={'rms_3d_m':None},routes={}))['accepted']
++    c['aggregate']['rms_3d_m']=float('nan');assert not f(b,c)['accepted']
+--- a/src/learned_qr.h
++++ b/src/learned_qr.h
+@@ -24,6 +24,8 @@
+ typedef struct {
+     qr_net q, r;
+     double qlimit, rlimit, max_gap;
++    int rpolicy; /* V1=0 legacy, V2=1 CN0 guard, V3=2 consistency/3 blind */
++    double guard_anchor,guard_width,phase_cap;
+     int provenance; /* 0=untrained, 1=caller-declared real trained, 2=synthetic */
+ } qr_model;
+ 
+@@ -62,12 +64,20 @@
+     memset(m,0,sizeof(*m));
+     ok=fscanf(f,"%39s %d %lf %lf %lf",magic,&m->provenance,
+               &m->qlimit,&m->rlimit,&m->max_gap)==5;
+-    ok=ok && strcmp(magic,"RTKLIB_QR_V1")==0 &&
++    ok=ok && (strcmp(magic,"RTKLIB_QR_V1")==0 || strcmp(magic,"RTKLIB_QR_V2")==0 || strcmp(magic,"RTKLIB_QR_V3")==0) &&
+        m->provenance>=0 && m->provenance<=2 &&
+        (m->provenance==1 || allow_test) &&
+        isfinite(m->qlimit) && m->qlimit>1 && m->qlimit<=100 &&
+        isfinite(m->rlimit) && m->rlimit>1 && m->rlimit<=1e6 &&
+        isfinite(m->max_gap) && m->max_gap>0 && m->max_gap<=3600;
++    if (ok && (strcmp(magic,"RTKLIB_QR_V2")==0 || strcmp(magic,"RTKLIB_QR_V3")==0)) {
++        ok=fscanf(f,"%d %lf %lf %lf",&m->rpolicy,&m->guard_anchor,&m->guard_width,&m->phase_cap)==4;
++        ok=ok && ((strcmp(magic,"RTKLIB_QR_V2")==0 && m->rpolicy==1) ||
++                  (strcmp(magic,"RTKLIB_QR_V3")==0 && (m->rpolicy==2 || m->rpolicy==3))) && isfinite(m->guard_anchor) &&
++            (m->rpolicy==1?m->guard_anchor>=20:m->guard_anchor>0) && m->guard_anchor<=55 && isfinite(m->guard_width) &&
++            m->guard_width>=1 && m->guard_width<=30 && isfinite(m->phase_cap) &&
++            m->phase_cap>=1 && m->phase_cap<=100 && (m->rpolicy<2 || m->phase_cap==1.);
++    }
+     if (ok) ok=qr_read_net(f,&m->q,QR_QDIM,2) && qr_read_net(f,&m->r,QR_RDIM,1);
+     if (ok && fscanf(f," %c",&extra)==1) ok=0; /* reject extra/corrupt content */
+     fclose(f);
+@@ -96,6 +106,34 @@
+         if (!isfinite(z)) {out[0]=1; if(net->output==2) out[1]=1; return 0;}
+         out[i]=exp(log(limit)*tanh(z));
+     }
++    return 1;
++}
++
++/* Versioned policy: exactly the same transform as the Torch model. */
++static inline int qr_model_forward(const qr_model *m,int isq,const double *x,double *out)
++{
++    int i,j,k=(QR_WINDOW-1)*(QR_RDIM+1);
++    double gate=0.0,cn0,d,xx[QR_INPUT_MAX];const double *input=x;
++    if(!isq && m->rpolicy==3){memcpy(xx,x,sizeof(double)*m->r.input);
++        for(i=0;i<QR_WINDOW;i++) { for(j=8;j<=10;j++)xx[i*(QR_RDIM+1)+j]=0.; }
++        input=xx;
++    }
++    int ok=qr_forward(isq?&m->q:&m->r,input,isq?m->qlimit:m->rlimit,out);
++    if (!ok || isq || m->rpolicy==0) return ok;
++    if (x[k+QR_RDIM]<=0.5) {out[0]=1.;return 1;}
++    if(m->rpolicy>=2) {
++        if(x[k+3]<.5){out[0]=1.;return 1;}
++        d=fmax(expm1(fmin(8.,fabs(x[k+8]))),expm1(fmin(8.,fabs(x[k+9]))));
++        gate=m->rpolicy==3?1.:fmin(1.,fmax(0.,(d-m->guard_anchor)/m->guard_width));
++        out[0]=1.+gate*fmax(out[0]-1.,0.);return 1;
++    }
++    for(i=0;i<2;i++) {
++        cn0=40.+10.*x[k+i];
++        d=cn0>0.?(m->guard_anchor-cn0)/m->guard_width:0.;
++        gate=fmax(gate,d);
++    }
++    gate=fmin(1.,fmax(0.,gate));
++    out[0]=1.+gate*(x[k+3]>.5?fmax(out[0]-1.,0.):m->phase_cap-1.);
+     return 1;
+ }
+ 
+--- a/src/learned_qr_adapter.h
++++ b/src/learned_qr_adapter.h
+@@ -15,6 +15,9 @@
+     qr_callback callback;
+     void *user;
+     int failed;
++    int observe_candidates, observe_fixed;
++    double innovation[MAXSAT][NFREQ];
++    struct { double t,mp0,p,d; unsigned signal; int valid,mpvalid; } evidence[MAXSAT][NFREQ];
+     FILE *log;
+ } qr_rtk_context;
+ 
+@@ -102,6 +105,8 @@
+ {
+     qr_rtk_context *c=(qr_rtk_context*)context;
+     if(!c) return;
++    memset(c->evidence,0,sizeof(c->evidence));
++    memset(c->innovation,0,sizeof(c->innovation));
+     memset(&c->q,0,sizeof(c->q));
+     memset(c->r,0,MAXSAT*2*NFREQ*sizeof(qr_history));
+ }
+@@ -144,8 +149,7 @@
+             }
+         }
+         else if(c->loaded && (c->mode & (isq?1:2)))
+-            qr_forward(isq?&c->model.q:&c->model.r,flat,
+-                       isq?c->model.qlimit:c->model.rlimit,h->cached);
++            qr_model_forward(&c->model,isq,flat,h->cached);
+         h->cached_valid=1;
+     }
+     factors[0]=h->cached[0];factors[1]=h->cached[1];
+@@ -173,6 +177,35 @@
+     f[7]=log1p(sqrt(fmax(variance,0)));f[8]=rtk->sol.ns/40.0;f[9]=rtk->sol.stat/6.0;
+     qr_capture(c,&c->q,1,qr_seconds(rtk->sol.time),0,0,f,0,0,s);
+     if(c->mode&1) {Q[0]*=s[0];Q[4]*=s[0];Q[8]*=s[1];}
++}
++
++/* Current SD code innovations: remove a per-system clock with a median,
++ * normalize by predicted geometry and ORIGINAL code noise, never a learned R.
++ * No reference trajectory or future observation is consumed here. */
++static inline void qr_prepare_evidence(rtk_t *rtk,const int *sat,const double *y,
++    const double *e,const double *azel,const int *iu,const int *ir,int ns,int nf,const double *P)
++{
++    qr_rtk_context *c=(qr_rtk_context*)rtk->learned_qr;
++    double sorted[MAXSAT],med,var,vp,a,b,v; int i,j,f,sys,n,q;
++    if(!c || c->model.rpolicy<2) return;
++    memset(c->innovation,0,sizeof(c->innovation));
++    for(sys=0;sys<7;sys++) for(f=0;f<nf;f++) {
++        n=0;
++        for(i=0;i<ns;i++) if(qr_sys_index(rtk->ssat[sat[i]-1].sys)==sys &&
++            y[f+nf+iu[i]*nf*2]!=0 && y[f+nf+ir[i]*nf*2]!=0) {
++            sorted[n++]=y[f+nf+iu[i]*nf*2]-y[f+nf+ir[i]*nf*2];
++        }
++        if(n<4) continue;
++        for(i=1;i<n;i++) {v=sorted[i];j=i;while(j>0 && sorted[j-1]>v){sorted[j]=sorted[j-1];j--;}sorted[j]=v;}
++        med=n%2?sorted[n/2]:.5*(sorted[n/2-1]+sorted[n/2]);
++        for(i=0;i<ns;i++) if(qr_sys_index(rtk->ssat[sat[i]-1].sys)==sys &&
++            y[f+nf+iu[i]*nf*2]!=0 && y[f+nf+ir[i]*nf*2]!=0) {
++            a=rtk->opt.eratio[f]*rtk->opt.err[1];b=rtk->opt.eratio[f]*rtk->opt.err[2];
++            var=2*(a*a+b*b/fmax(.04,pow(sin(azel[1+iu[i]*2]),2)));vp=0;
++            if(P) for(j=0;j<3;j++)for(q=0;q<3;q++)vp+=e[j+iu[i]*3]*P[j+q*rtk->nx]*e[q+iu[i]*3];
++            c->innovation[sat[i]-1][f]=(y[f+nf+iu[i]*nf*2]-y[f+nf+ir[i]*nf*2]-med)/sqrt(fmax(1.,var+vp));
++        }
++    }
+ }
+ 
+ /* SD code/phase variances are already in m^2 in varerr(). Do not multiply by
+@@ -208,6 +241,38 @@
+     feature[8]=qr_signed_log(code?obs->Pstd[frq]:obs->Lstd[frq]);
+     feature[9]=((obs->LLI[frq]|baseobs->LLI[frq])&LLI_HALFC)?1:0;
+     feature[10]=delta;feature[11]=log1p(continuous?h->seen+1:1);
++    if(c->model.rpolicy>=2) {
++        double lam;
++        double f1=FREQL1,f2=FREQL2,gamma=(f1/f2)*(f1/f2),mp,dt,psd,dsd,anom=0.,pd=0.;
++        unsigned mp_signal=((unsigned)obs->code[0]<<24)|((unsigned)obs->code[1]<<16)|((unsigned)baseobs->code[0]<<8)|baseobs->code[1];
++        int mp_slip=((obs->LLI[0]|obs->LLI[1]|baseobs->LLI[0]|baseobs->LLI[1]|rtk->ssat[sat-1].slip[0]|rtk->ssat[sat-1].slip[1])&LLI_SLIP)!=0;
++        int valid=(sys==SYS_GPS && obs->P[frq]!=0 && baseobs->P[frq]!=0 &&
++            obs->L[0]!=0 && obs->L[1]!=0 && baseobs->L[0]!=0 && baseobs->L[1]!=0 && frq<2);
++        lam=CLIGHT/(frq==0?f1:f2);
++        feature[8]=qr_signed_log(c->innovation[sat-1][frq]);feature[9]=feature[10]=0.;
++        if(valid) {
++            psd=obs->P[frq]-baseobs->P[frq];dsd=obs->D[frq]-baseobs->D[frq];
++            mp=psd-lam*(obs->L[frq]-baseobs->L[frq])-
++              2.*(frq==0?1.:gamma)/(gamma-1.)*(CLIGHT/f1*(obs->L[0]-baseobs->L[0])-CLIGHT/f2*(obs->L[1]-baseobs->L[1]));
++            dt=t-c->evidence[sat-1][frq].t;
++            if(!c->evidence[sat-1][frq].valid || dt>c->model.max_gap || dt<0 ||
++              c->evidence[sat-1][frq].signal!=mp_signal || (mp_slip && dt>0)) {
++                c->evidence[sat-1][frq].mp0=mp;c->evidence[sat-1][frq].valid=1;
++            }
++            else {
++                anom=(mp-c->evidence[sat-1][frq].mp0)/sqrt(fmax(1.,code?native_variance:1.));
++                if(dt>0 && obs->D[frq]!=0 && baseobs->D[frq]!=0)
++                    pd=(psd-c->evidence[sat-1][frq].p+.5*lam*(dsd+c->evidence[sat-1][frq].d)*dt)/sqrt(fmax(1.,code?native_variance:1.));
++            }
++            /* Only code consumes/updates the anchor. Carrier pass must not overwrite it. */
++            if(code) {
++                if(dt>0 && dt<=c->model.max_gap) c->evidence[sat-1][frq].mp0+=fmin(1.,dt/600.)*fmax(-1.,fmin(1.,mp-c->evidence[sat-1][frq].mp0));
++                c->evidence[sat-1][frq].t=t;c->evidence[sat-1][frq].p=psd;c->evidence[sat-1][frq].d=dsd;
++                c->evidence[sat-1][frq].signal=mp_signal;
++            }
++            feature[9]=qr_signed_log(anom);feature[10]=qr_signed_log(pd);
++        } else if(code) c->evidence[sat-1][frq].valid=0;
++    }
+     qr_capture(c,h,0,t,signature,slip,feature,sat,code*NFREQ+frq,factor);
+     qr_sd_event(c,sat,code*NFREQ+frq,native_variance,(c->mode&2)?factor[0]:1.0);
+     return (c->mode&2)?native_variance*factor[0]:native_variance;
+--- a/src/qr_bridge.c
++++ b/src/qr_bridge.c
+@@ -13,7 +13,7 @@
+     prcopt_t opt;
+     rtk_t rtk;
+     qr_model model;
+-    int mode,loaded,training,initialized,failed,first,stable;
++    int mode,loaded,training,initialized,failed,first,stable,observe_candidates,observe_fixed,rpolicy;
+     int *ri,*bi,nr,nb,cursor;
+     double max_gap,pair_age;
+     gtime_t previous;
+@@ -47,6 +47,8 @@
+     c->r=(qr_history*)calloc(MAXSAT*2*NFREQ,sizeof(qr_history));
+     if(!c->r) {free(c);return 0;}
+     c->mode=s->mode;c->loaded=s->loaded;c->model=s->model;c->stable=s->stable;
++    c->observe_candidates=s->observe_candidates;c->observe_fixed=s->observe_fixed;
++    if(!s->loaded)c->model.rpolicy=s->rpolicy;
+     c->model.max_gap=s->max_gap;s->rtk.learned_qr=c;
+     s->first=1;
+     return 1;
+@@ -59,6 +61,33 @@
+     s->stable=enabled!=0;
+     if(s->initialized && s->rtk.learned_qr)
+         ((qr_rtk_context*)s->rtk.learned_qr)->stable=s->stable;
++    return 0;
++}
++EXPORT int qr_set_learning_options(void *session,int policy,int candidates,int fixed)
++{
++    qr_session *s=(qr_session*)session;qr_rtk_context *c;
++    if(!s || policy<0 || policy>3 || s->cursor!=0)return -1;
++    s->rpolicy=policy;s->observe_candidates=candidates;s->observe_fixed=fixed;
++    c=(qr_rtk_context*)s->rtk.learned_qr;c->observe_candidates=candidates;c->observe_fixed=fixed;
++    if(!s->loaded)c->model.rpolicy=policy;
++    return 0;
++}
++/* Replace weights at an epoch boundary WITHOUT resetting the filter or history.
++ * A NULL path selects live Python inference, preserving the last model schema. */
++EXPORT int qr_reload_model(void *session,const char *path,int allow_test,int candidates,
++    char *error,int error_size)
++{
++    qr_session *s=(qr_session*)session;qr_rtk_context *c;qr_model m;int i;
++    if(!s || s->failed)return qr_error(error,error_size,"invalid reload session");
++    c=(qr_rtk_context*)s->rtk.learned_qr;
++    if(path && *path){
++        if(!qr_load(&m,path,allow_test) || fabs(m.max_gap-s->max_gap)>1e-9)
++            return qr_error(error,error_size,"reload model/schema/gap invalid");
++        s->model=m;s->rpolicy=m.rpolicy;s->loaded=1;c->model=m;c->loaded=1;
++    }else{s->loaded=0;c->loaded=0;c->model.rpolicy=s->rpolicy;}
++    s->observe_candidates=candidates;c->observe_candidates=candidates;
++    c->q.cached_valid=0;
++    for(i=0;i<MAXSAT*2*NFREQ;i++)c->r[i].cached_valid=0;
+     return 0;
+ }
+ EXPORT void qr_close(void *session)
+--- a/src/qr_bridge.h
++++ b/src/qr_bridge.h
+@@ -7,6 +7,8 @@
+ extern "C" {
+ #endif
+ EXPORT int qr_bridge_abi(void);
++EXPORT int qr_reload_model(void *session,const char *path,int allow_test,int candidates,char *error,int error_size);
++EXPORT int qr_set_learning_options(void *session,int policy,int candidates,int fixed);
+ EXPORT int qr_set_stable(void *session,int enabled);
+ EXPORT void *qr_open(const char *config,const char *rover,const char *base,
+                      const char **navfiles,int nnav,const char *model,int mode,
+--- a/src/qr_trace.h
++++ b/src/qr_trace.h
+@@ -10,7 +10,7 @@
+     QR_BEGIN=1, QR_INIT=2, QR_TRANSITION=3, QR_QADD=4,
+     QR_INFER_Q=5, QR_INFER_R=6, QR_SD_VARIANCE=7, QR_DIAG=8,
+     QR_ZERO=9, QR_OFFSET=10, QR_PRIOR=11, QR_FILTER=12,
+-    QR_ACCEPT=13, QR_END=14
++    QR_ACCEPT=13, QR_END=14, QR_CANDIDATE=15, QR_FIXED_RESULT=16
+ };
+ typedef struct {
+     int kind, nx, n, m;
+--- a/src/rtkpos.c
++++ b/src/rtkpos.c
+@@ -1282,6 +1282,8 @@
+     Ri=mat(ns*nf*2+2,1); Rj=mat(ns*nf*2+2,1); im=mat(ns,1);
+     tropu=mat(ns,1); tropr=mat(ns,1); dtdxu=mat(ns,3); dtdxr=mat(ns,3);
+ 
++    qr_prepare_evidence(rtk,sat,y,e,azel,iu,ir,ns,nf,P);
++
+     /* zero out residual phase and code biases for all satellites */
+     for (i=0;i<MAXSAT;i++) for (j=0;j<NFREQ;j++) {
+         rtk->ssat[i].resp[j]=rtk->ssat[i].resc[j]=0.0;
+@@ -1652,6 +1654,45 @@
+     }
+     return nb;
+ }
++/* Read-only training observer. ddidx operates on a copied control object;
++ * it cannot change production flags, ratio checks, state or hold decisions. */
++static void qr_candidate_observe(rtk_t *rtk)
++{
++    qr_rtk_context *c=(qr_rtk_context*)rtk->learned_qr;
++    rtk_t *copy; int *ix,i,j,a,b,d,e,nb,n=rtk->nx;
++    double *y,*Q,*ints,*inv,*dx,cost[2],p[3];
++    if(!c || !c->observe_candidates || !c->callback) return;
++    copy=(rtk_t*)malloc(sizeof(*copy));if(!copy){c->failed=1;return;}*copy=*rtk;
++    ix=imat(n,2);nb=ddidx(copy,ix,rtk->opt.gpsmodear,rtk->opt.glomodear!=0,0);free(copy);
++    if(nb<2){free(ix);return;}
++    y=mat(nb,1);Q=mat(nb,nb);ints=mat(nb,2);inv=mat(nb,nb);dx=mat(nb,1);
++    for(i=0;i<nb;i++){a=ix[2*i];b=ix[2*i+1];y[i]=rtk->x[a]-rtk->x[b];
++      for(j=0;j<nb;j++){d=ix[2*j];e=ix[2*j+1];Q[i+j*nb]=rtk->P[a+d*n]-rtk->P[a+e*n]-rtk->P[b+d*n]+rtk->P[b+e*n];}}
++    if(lambda(nb,2,y,Q,ints,cost)==0){
++        matcpy(inv,Q,nb,nb);
++        if(matinv(inv,nb)==0){
++            for(i=0;i<nb;i++)y[i]-=ints[i];matmul("NN",nb,1,nb,inv,y,dx);
++            for(i=0;i<3;i++){p[i]=rtk->x[i];for(j=0;j<nb;j++)p[i]-=(rtk->P[i+ix[2*j]*n]-rtk->P[i+ix[2*j+1]*n])*dx[j];}
++            qr_emit(rtk,QR_CANDIDATE,nb,0,ix,ints,p,cost);
++        }
++    }
++    free(ix);free(y);free(Q);free(ints);free(inv);free(dx);
++}
++/* Observe the actual accepted DD integers reconstructed by unchanged restamb. */
++static void qr_fixed_observe(rtk_t *rtk,const double *xa)
++{
++    qr_rtk_context *c=(qr_rtk_context*)rtk->learned_qr;int ids[MAXSAT*NFREQ*2],m,f,s,first,nb=0,i,j;
++    double values[MAXSAT*NFREQ];
++    if(!c || !c->observe_fixed || !c->callback)return;
++    for(m=0;m<6;m++)for(f=0;f<NF(&rtk->opt);f++){
++        first=-1;
++        for(s=0;s<MAXSAT;s++)if(test_sys(rtk->ssat[s].sys,m) && rtk->ssat[s].fix[f]>=2){
++            if(first<0){first=s;continue;}i=IB(first+1,f,&rtk->opt);j=IB(s+1,f,&rtk->opt);
++            ids[2*nb]=i;ids[2*nb+1]=j;values[nb++]=xa[i]-xa[j];
++        }
++    }
++    if(nb)qr_emit(rtk,QR_FIXED_RESULT,nb,rtk->na,ids,values,NULL,NULL);
++}
+ /* translate double diff fixed phase-bias values to single diff fix phase-bias values */
+ static void restamb(rtk_t *rtk, const double *bias, int nb, double *xa)
+ {
+@@ -2255,6 +2296,8 @@
+         }
+         else stat=SOLQ_NONE;
+     }
++    if(stat==SOLQ_FLOAT) qr_candidate_observe(rtk);
++
+     /* resolve integer ambiguity by LAMBDA */
+     if (stat==SOLQ_FLOAT) {
+         /* if valid fixed solution, process it */
+@@ -2287,6 +2330,8 @@
+             }
+         }
+     }
++
++    if(stat==SOLQ_FIX) qr_fixed_observe(rtk,xa);
+ 
+     /* save solution status (fixed or float) */
+     if (stat==SOLQ_FIX) {

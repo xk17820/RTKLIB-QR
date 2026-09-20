@@ -1,3 +1,7 @@
+> SCL-RTK 新版入口、DGPS连续状态监督和V3模型定义见 [SCL_RTK.md](SCL_RTK.md)。本页保留通用数据格式与旧V1/V2选项；旧实验权重和结论不作为新版性能证明。
+
+> 更新：本修正版默认使用 `--r-policy code_guard --selection rtk-safe`。V2 模型和完整 RTK 验证选择规则见 `GUARDED_R_REPAIR.md`；本页旧版 FLOAT 选择说明被新规则替代。`--phase-guard-cap` 默认 1，实验值 4 不是所有接收机通用的标定值。旧 V1 权重不会自动变成修正版。
+
 # 从自己的观测与参考轨迹开始训练
 
 本实现是对论文“用最终位置误差优化滤波随机模型”的 RTK 工程迁移，不是对原文 DGNSS/bias/Transformer 的逐项复现。训练是**条件一阶 FLOAT 递推求导**，详见 `REFERENCE_LOSS.md`。不要把代码测试通过理解为自己的定位精度必然提升。
@@ -90,7 +94,7 @@ python research/learned_qr/run_qr.py train \
 
 `--mode qr` 按完整数据遍历交替训练：第1轮 R，第2轮 Q，然后重复。`q`/`r` 用于消融。窗口10历元是网络特征窗口；`sequence-length` 是截断反向传播长度，两者不是同一参数。训练遍历中每个块后更新权重，滤波数值继续递推，计算图在块边界截断。跨观测长中断时重置会话；参考无效仅屏蔽 loss，不把它作为滤波观测。
 
-loss 主项为 ENU 分量的 Huber 位置误差，U 分量乘 `up-weight`；`--huber-delta 0` 切换到平方误差。另可加创新 NLL 和 log 方差倍率正则。Q/R 方差倍率都有正值上下界。验证只做前向；根据验证集加权位置 RMSE 保存 `best`。不会对 LAMBDA 离散搜索反传。
+loss 主项为 ENU 分量的 Huber 位置误差，U 分量乘 `up-weight`；`--huber-delta 0` 切换到平方误差。另可加创新 NLL 和 log 方差倍率正则。Q/R 方差倍率都有正值上下界。验证只做前向；默认以完整原生 RTK 验证门限相对于倍率1基线筛选 `best`，见 `GUARDED_R_REPAIR.md`。不会对 LAMBDA 离散搜索反传。
 
 输出目录必须尚不存在，避免覆盖旧实验：
 

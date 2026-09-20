@@ -1,35 +1,9 @@
-# RTKLIB-QR：参考轨迹监督的 Q/R 学习与 C 部署
+# SCL-RTK / RTKLIB-QR research branch
 
-研究分支：`research/learned-qr`。`main` 保留上游。**原有 LAMBDA、固定管理、fix-and-hold 和双差协方差函数不改；不增加 bias head、不回归坐标。**
+**Structured Covariance Learning for RTK**: C-native RTK with causal code-quality features, structured Q/R multipliers and integer-candidate-conditioned reference-position supervision. Original LAMBDA, acceptance and hold algorithms remain; no pseudorange bias or coordinate-correction branch.
 
-现在顶层 C 解算器已接入 Q/R；不是必须先运行补丁的原型目录。提供原始 RINEX → 在线原生 FLOAT 递推 → 参考位置损失 → 网络更新 → 权重导出 → C 回放的可执行流程。
+Start with [`research/learned_qr/docs/SCL_RTK.md`](research/learned_qr/docs/SCL_RTK.md). General raw-data/CSV interfaces: [`TRAINING.md`](research/learned_qr/docs/TRAINING.md). Source and tests live in `research/learned_qr`; native hooks are already integrated under top-level `src`.
 
-- [完整训练、数据格式和部署说明](research/learned_qr/docs/TRAINING.md)
-- [梯度定义及与原论文的区别](research/learned_qr/docs/REFERENCE_LOSS.md)
-- [验证记录及性能结论边界](research/learned_qr/docs/VERIFICATION.md)
-- [数据清单示例](research/learned_qr/configs/dataset.example.json)
+V1/V2 files remain readable. V3 fixes phase weights and uses causal observation consistency rather than absolute-C/N0 gating. Training supervises actual continuous FLOAT **and DGPS-labelled filter states**, not independent SINGLE/SPP outputs. Conditional gradients do not differentiate integer search, local H, feature construction or hold decisions.
 
-## Ubuntu / WSL 构建入口
-
-完整上游测试需要 BLAS/LAPACK 开发库；只编译 `rnx2rtkp` 不能代替这些测试。Windows 原生 DLL 尚未做全平台验收。
-
-```bash
-sudo apt-get update
-sudo apt-get install -y build-essential cmake git python3-venv libblas-dev liblapack-dev
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j4
-python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install -r research/learned_qr/requirements.txt
-ctest --test-dir build --output-on-failure
-(cd research/learned_qr && OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python -m pytest -q)
-python research/learned_qr/run_qr.py --help
-python research/learned_qr/run_qr.py train --manifest /path/dataset.json \
-  --config research/learned_qr/configs/short-baseline.conf --output outputs/run01
-```
-
-**方法边界：**训练是条件一阶 EKF 求导，局部 H、坐标旋转、因果特征及离散选择停止梯度；不是对全部 C 指令和整数搜索做自动微分。训练/桥接回放使用 Cholesky/Joseph 数值更新，必须同时比较“稳定核关闭学习”的基线，不能把数值核变化带来的增益算成学习增益。原生 `rnx2rtkp` 默认关闭学习且不启用稳定核时保留旧路径。
-
-验证使用仓库附带的真实格式 RINEX，训练链路测试中的参考标签是人工构造的；没有随仓库提供真实训练权重或定位改善结论。用户需在自己的独立训练、验证、测试路线中评估。
-
-GitHub Actions 常规验证使用只读权限，构建全部原生目标并运行原生和学习模块测试；测试输出在 `qr-validation` artifact，当前提交的源码包在 `qr-source` artifact。发布过程中使用的一次性传输文件已移除，用户不需要运行任何发布脚本。
+A completed software test is not evidence that a trained model improves positioning. Validation rejection leaves an explicitly untrained identity fallback. Never deploy synthetic or rejected weights as a validated field model. Previous negative experiment reports are retained. This branch does not modify upstream `main`.

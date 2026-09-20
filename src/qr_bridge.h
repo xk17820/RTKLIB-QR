@@ -7,6 +7,8 @@
 extern "C" {
 #endif
 EXPORT int qr_bridge_abi(void);
+EXPORT int qr_reload_model(void *session,const char *path,int allow_test,int candidates,char *error,int error_size);
+EXPORT int qr_set_learning_options(void *session,int policy,int candidates,int fixed);
 EXPORT int qr_set_stable(void *session,int enabled);
 EXPORT void *qr_open(const char *config,const char *rover,const char *base,
                      const char **navfiles,int nnav,const char *model,int mode,

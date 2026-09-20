@@ -33,7 +33,7 @@ def test_cli_train_export_and_native_replay(tmp_path):
         rover=str(args['rover']),base=str(args['base']),nav=[str(p) for p in args['nav']],reference=str(ref))]}))
     out=tmp_path/'trained'
     command=[sys.executable,'-m','qrlearn.cli','train','--manifest',str(manifest),'--config',str(args['config']),
-        '--output',str(out),'--epochs','2','--sequence-length','4','--warmup-epochs','1',
+        '--output',str(out),'--r-policy','unconstrained','--selection','float','--epochs','2','--sequence-length','4','--warmup-epochs','1',
         '--max-epochs-per-route','8','--max-gap','31','--allow-training-only','--provenance','synthetic']
     subprocess.run(command,cwd=KIT,check=True,capture_output=True,text=True)
     assert (out/'best.qr').exists() and (out/'history.jsonl').exists()
@@ -67,3 +67,31 @@ def test_reference_conversion_does_not_leave_invalid_output(tmp_path):
                '--coordinate-format','xyz','--time-format','week-tow'])
     assert rc==2
     assert not output.exists(), 'failed conversion must not leave a reference CSV'
+
+
+def test_rejected_native_candidate_keeps_identity_checkpoint(tmp_path):
+    """Solver-derived labels are ONLY a software rejection test, not truth."""
+    import shutil
+    m=cli_module();kw=raw_kwargs();copy=tmp_path/'validation.obs'
+    shutil.copyfile(kw['rover'],copy);records=[]
+    with Session(**kw,training=False,mode='off') as sess:
+        for _ in range(8):records.append(sess.step())
+    def reference(path,offset):
+        rows=['t_gpst_s,x_m,y_m,z_m,valid']
+        for rec in records:rows.append(','.join(map(str,[rec['time'],*(rec['position']+offset),1])))
+        path.write_text('\n'.join(rows)+'\n')
+    tr=tmp_path/'tr.csv';va=tmp_path/'va.csv';reference(tr,.2);reference(va,0.)
+    def route(name,obs,ref):return dict(id=name,rover=str(obs),base=str(kw['base']),
+                                        nav=list(map(str,kw['nav'])),reference=str(ref))
+    manifest=tmp_path/'m.json';manifest.write_text(json.dumps({'train':[route('tr',kw['rover'],tr)],
+                                                             'validation':[route('va',copy,va)]}))
+    out=tmp_path/'out'
+    rc=m.main(['train','--manifest',str(manifest),'--config',str(kw['config']),'--output',str(out),
+        '--epochs','1','--sequence-length','4','--warmup-epochs','1','--max-epochs-per-route','8',
+        '--max-gap','31','--provenance','synthetic'])
+    assert rc==0
+    assert json.loads((out/'deployment.json').read_text())['accepted'] is False
+    assert torch.load(out/'best.pt',map_location='cpu',weights_only=True)['epoch']==0
+    assert (out/'best.qr').read_text().startswith('RTKLIB_QR_V2 0 ')
+
+    assert json.loads((out/"run.json").read_text())["selection"]=="native complete-RTK gate against identity baseline"

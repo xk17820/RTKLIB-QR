@@ -46,7 +46,7 @@ def library_path(value=None)->Path:
 
 class Session:
     def __init__(self,*,config,rover,base,nav,model=None,mode='off',training=True,
-                 allow_test=False,max_gap=30.0,pair_age=0.05,library=None,stable=True):
+                 allow_test=False,max_gap=30.0,pair_age=0.05,library=None,stable=True,scl=False,candidates=False,observe_fixed=False):
         if mode not in MODES:raise ValueError('mode must be off/q/r/qr')
         if not stable and (training or mode!='off'):raise ValueError('legacy update is available only for non-learning replay')
         if not nav:raise ValueError('at least one navigation file is required')
@@ -73,6 +73,12 @@ class Session:
                 os.fsencode(Path(model).resolve()) if model is not None else None,
                 MODES[mode],int(training),int(allow_test),max_gap,pair_age,error,len(error))
         if not self.ptr:raise RuntimeError(error.value.decode('utf-8',errors='replace'))
+        if scl or candidates or observe_fixed:
+            if not hasattr(self.lib,'qr_set_learning_options'):
+                self.close();raise RuntimeError('rebuild library with SCL observer')
+            self.lib.qr_set_learning_options.argtypes=[c.c_void_p,c.c_int,c.c_int,c.c_int]
+            if self.lib.qr_set_learning_options(self.ptr,2 if scl else 0,int(candidates),int(observe_fixed)):
+                self.close();raise RuntimeError('invalid SCL options')
         if self.lib.qr_set_stable(self.ptr,int(stable)):
             self.close();raise RuntimeError('unsupported numerical update mode')
 
@@ -103,6 +109,16 @@ class Session:
         if not result:return None
         if not output:raise RuntimeError('native session did not finish the epoch')
         return output
+
+    def reload_model(self,path=None,*,allow_test=False,candidates=False):
+        if not self.ptr or self.failed:raise RuntimeError('session not usable')
+        self.lib.qr_reload_model.argtypes=[c.c_void_p,c.c_char_p,c.c_int,c.c_int,c.c_char_p,c.c_int]
+        error=c.create_string_buffer(1024)
+        with native_call():
+            code=self.lib.qr_reload_model(self.ptr,os.fsencode(Path(path).resolve()) if path is not None else None,
+                int(allow_test),int(candidates),error,len(error))
+        if code:raise RuntimeError(error.value.decode())
+        self.model=path
 
     def restart(self):
         if not self.ptr:raise RuntimeError('session closed')

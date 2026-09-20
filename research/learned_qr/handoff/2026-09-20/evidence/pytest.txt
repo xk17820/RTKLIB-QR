@@ -1,0 +1,31 @@
+......................F................................................. [ 85%]
+............                                                             [100%]
+=================================== FAILURES ===================================
+__________ test_identity_learns_but_no_shrinking_or_clean_reweighting __________
+
+    def test_identity_learns_but_no_shrinking_or_clean_reweighting():
+        m=model();h=hist();assert m.r(h).item()==1
+>       m.r(h).backward();assert m.r.fc2.bias.grad.abs().sum()>0
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       assert tensor(0., dtype=torch.float64) > 0
+E        +  where tensor(0., dtype=torch.float64) = <built-in method sum of Tensor object at 0x7f14a8baf8e0>()
+E        +    where <built-in method sum of Tensor object at 0x7f14a8baf8e0> = tensor([0.], dtype=torch.float64).sum
+E        +      where tensor([0.], dtype=torch.float64) = <built-in method abs of Tensor object at 0x7f14a8baefd0>()
+E        +        where <built-in method abs of Tensor object at 0x7f14a8baefd0> = tensor([0.], dtype=torch.float64).abs
+E        +          where tensor([0.], dtype=torch.float64) = Parameter containing:\ntensor([0.], dtype=torch.float64, requires_grad=True).grad
+E        +            where Parameter containing:\ntensor([0.], dtype=torch.float64, requires_grad=True) = Linear(in_features=16, out_features=1, bias=True).bias
+E        +              where Linear(in_features=16, out_features=1, bias=True) = GuardedCodeNet(\n  (fc1): Linear(in_features=130, out_features=16, bias=True)\n  (fc2): Linear(in_features=16, out_features=1, bias=True)\n).fc2
+E        +                where GuardedCodeNet(\n  (fc1): Linear(in_features=130, out_features=16, bias=True)\n  (fc2): Linear(in_features=16, out_features=1, bias=True)\n) = QRModel(\n  (q): ScaleNet(\n    (fc1): Linear(in_features=110, out_features=16, bias=True)\n    (fc2): Linear(in_features... Linear(in_features=130, out_features=16, bias=True)\n    (fc2): Linear(in_features=16, out_features=1, bias=True)\n  )\n).r
+
+tests/test_guard_policy.py:24: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_guard_policy.py::test_identity_learns_but_no_shrinking_or_clean_reweighting - assert tensor(0., dtype=torch.float64) > 0
+ +  where tensor(0., dtype=torch.float64) = <built-in method sum of Tensor object at 0x7f14a8baf8e0>()
+ +    where <built-in method sum of Tensor object at 0x7f14a8baf8e0> = tensor([0.], dtype=torch.float64).sum
+ +      where tensor([0.], dtype=torch.float64) = <built-in method abs of Tensor object at 0x7f14a8baefd0>()
+ +        where <built-in method abs of Tensor object at 0x7f14a8baefd0> = tensor([0.], dtype=torch.float64).abs
+ +          where tensor([0.], dtype=torch.float64) = Parameter containing:\ntensor([0.], dtype=torch.float64, requires_grad=True).grad
+ +            where Parameter containing:\ntensor([0.], dtype=torch.float64, requires_grad=True) = Linear(in_features=16, out_features=1, bias=True).bias
+ +              where Linear(in_features=16, out_features=1, bias=True) = GuardedCodeNet(\n  (fc1): Linear(in_features=130, out_features=16, bias=True)\n  (fc2): Linear(in_features=16, out_features=1, bias=True)\n).fc2
+ +                where GuardedCodeNet(\n  (fc1): Linear(in_features=130, out_features=16, bias=True)\n  (fc2): Linear(in_features=16, out_features=1, bias=True)\n) = QRModel(\n  (q): ScaleNet(\n    (fc1): Linear(in_features=110, out_features=16, bias=True)\n    (fc2): Linear(in_features... Linear(in_features=130, out_features=16, bias=True)\n    (fc2): Linear(in_features=16, out_features=1, bias=True)\n  )\n).r
+1 failed, 83 passed in 9.71s

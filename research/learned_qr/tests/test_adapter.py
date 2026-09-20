@@ -13,6 +13,9 @@ STUB=r'''
 #include <stdlib.h>
 #include <string.h>
 #define NFREQ 3
+#define FREQL1 1575.42e6
+#define FREQL2 1227.60e6
+#define CLIGHT 299792458.0
 #define MAXSAT 8
 #define PMODE_DGPS 1
 #define PMODE_KINEMA 2
@@ -28,9 +31,9 @@ STUB=r'''
 #define SYS_CMP 32
 #define SYS_IRN 64
 typedef struct {long time;double sec;} gtime_t;
-typedef struct {gtime_t time;unsigned char code[3],LLI[3];float Pstd[3],Lstd[3];} obsd_t;
-typedef struct {int mode,dynamics,ionoopt,nf;} prcopt_t;
-typedef struct {unsigned char slip[3];} ssat_t;
+typedef struct {gtime_t time;unsigned char code[3],LLI[3];float Pstd[3],Lstd[3]; double P[3],L[3],D[3];} obsd_t;
+typedef struct {int mode,dynamics,ionoopt,nf; double eratio[3],err[8];} prcopt_t;
+typedef struct {int sys; unsigned char slip[3];} ssat_t;
 typedef struct {gtime_t time;int ns,stat;} sol_t;
 typedef struct {void *learned_qr;prcopt_t opt;sol_t sol;double *x,*P,tt;int nx;ssat_t ssat[MAXSAT];} rtk_t;
 static double time2gpst(gtime_t t,int*w) {*w=0;return t.time+t.sec;}

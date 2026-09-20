@@ -1282,6 +1282,8 @@ static int ddres(rtk_t *rtk, const obsd_t *obs, double dt, const double *x,
     Ri=mat(ns*nf*2+2,1); Rj=mat(ns*nf*2+2,1); im=mat(ns,1);
     tropu=mat(ns,1); tropr=mat(ns,1); dtdxu=mat(ns,3); dtdxr=mat(ns,3);
 
+    qr_prepare_evidence(rtk,sat,y,e,azel,iu,ir,ns,nf,P);
+
     /* zero out residual phase and code biases for all satellites */
     for (i=0;i<MAXSAT;i++) for (j=0;j<NFREQ;j++) {
         rtk->ssat[i].resp[j]=rtk->ssat[i].resc[j]=0.0;
@@ -1651,6 +1653,45 @@ static int ddidx(rtk_t *rtk, int *ix, int gps, int glo, int sbs)
         trace(3,"fixSats=");tracemat(3,fix,1,nb,7,0);
     }
     return nb;
+}
+/* Read-only training observer. ddidx operates on a copied control object;
+ * it cannot change production flags, ratio checks, state or hold decisions. */
+static void qr_candidate_observe(rtk_t *rtk)
+{
+    qr_rtk_context *c=(qr_rtk_context*)rtk->learned_qr;
+    rtk_t *copy; int *ix,i,j,a,b,d,e,nb,n=rtk->nx;
+    double *y,*Q,*ints,*inv,*dx,cost[2],p[3];
+    if(!c || !c->observe_candidates || !c->callback) return;
+    copy=(rtk_t*)malloc(sizeof(*copy));if(!copy){c->failed=1;return;}*copy=*rtk;
+    ix=imat(n,2);nb=ddidx(copy,ix,rtk->opt.gpsmodear,rtk->opt.glomodear!=0,0);free(copy);
+    if(nb<2){free(ix);return;}
+    y=mat(nb,1);Q=mat(nb,nb);ints=mat(nb,2);inv=mat(nb,nb);dx=mat(nb,1);
+    for(i=0;i<nb;i++){a=ix[2*i];b=ix[2*i+1];y[i]=rtk->x[a]-rtk->x[b];
+      for(j=0;j<nb;j++){d=ix[2*j];e=ix[2*j+1];Q[i+j*nb]=rtk->P[a+d*n]-rtk->P[a+e*n]-rtk->P[b+d*n]+rtk->P[b+e*n];}}
+    if(lambda(nb,2,y,Q,ints,cost)==0){
+        matcpy(inv,Q,nb,nb);
+        if(matinv(inv,nb)==0){
+            for(i=0;i<nb;i++)y[i]-=ints[i];matmul("NN",nb,1,nb,inv,y,dx);
+            for(i=0;i<3;i++){p[i]=rtk->x[i];for(j=0;j<nb;j++)p[i]-=(rtk->P[i+ix[2*j]*n]-rtk->P[i+ix[2*j+1]*n])*dx[j];}
+            qr_emit(rtk,QR_CANDIDATE,nb,0,ix,ints,p,cost);
+        }
+    }
+    free(ix);free(y);free(Q);free(ints);free(inv);free(dx);
+}
+/* Observe the actual accepted DD integers reconstructed by unchanged restamb. */
+static void qr_fixed_observe(rtk_t *rtk,const double *xa)
+{
+    qr_rtk_context *c=(qr_rtk_context*)rtk->learned_qr;int ids[MAXSAT*NFREQ*2],m,f,s,first,nb=0,i,j;
+    double values[MAXSAT*NFREQ];
+    if(!c || !c->observe_fixed || !c->callback)return;
+    for(m=0;m<6;m++)for(f=0;f<NF(&rtk->opt);f++){
+        first=-1;
+        for(s=0;s<MAXSAT;s++)if(test_sys(rtk->ssat[s].sys,m) && rtk->ssat[s].fix[f]>=2){
+            if(first<0){first=s;continue;}i=IB(first+1,f,&rtk->opt);j=IB(s+1,f,&rtk->opt);
+            ids[2*nb]=i;ids[2*nb+1]=j;values[nb++]=xa[i]-xa[j];
+        }
+    }
+    if(nb)qr_emit(rtk,QR_FIXED_RESULT,nb,rtk->na,ids,values,NULL,NULL);
 }
 /* translate double diff fixed phase-bias values to single diff fix phase-bias values */
 static void restamb(rtk_t *rtk, const double *bias, int nb, double *xa)
@@ -2255,6 +2296,8 @@ static int relpos(rtk_t *rtk, const obsd_t *obs, int nu, int nr,
         }
         else stat=SOLQ_NONE;
     }
+    if(stat==SOLQ_FLOAT) qr_candidate_observe(rtk);
+
     /* resolve integer ambiguity by LAMBDA */
     if (stat==SOLQ_FLOAT) {
         /* if valid fixed solution, process it */
@@ -2287,6 +2330,8 @@ static int relpos(rtk_t *rtk, const obsd_t *obs, int nu, int nr,
             }
         }
     }
+
+    if(stat==SOLQ_FIX) qr_fixed_observe(rtk,xa);
 
     /* save solution status (fixed or float) */
     if (stat==SOLQ_FIX) {
