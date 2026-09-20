@@ -1,0 +1,97 @@
+name: SCL public GNSS data acquisition
+on:
+  push:
+    branches: [research/learned-qr]
+    paths: ['.github/workflows/scl-open-data.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  acquire:
+    if: github.repository == 'xk17820/RTKLIB-QR' && github.ref == 'refs/heads/research/learned-qr'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        dataset: [ppc, urbannav-tokyo]
+    env:
+      DATASET: ${{ matrix.dataset }}
+    steps:
+      - name: Download public archive and retain GNSS and reference files only
+        shell: bash
+        run: |
+          mkdir -p acquisition/files
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, shutil, sys, time, urllib.request, zipfile
+          sources = {
+            'ppc': ('https://github.com/taroz/PPC-Dataset', 'https://chibakoudai-my.sharepoint.com/:u:/g/personal/66lsm6_chibatech_ac_jp/ETmyNr1VrcpFjqxgjXJdgkQBkfTwnykhSPOVKClOUBNOMQ?download=1'),
+            'urbannav-tokyo': ('https://github.com/IPNL-POLYU/UrbanNavDataset', 'https://www.dropbox.com/s/isu1bugpgr8dpas/Tokyo_Data.zip?dl=1'),
+          }
+          name = os.environ['DATASET']
+          source, url = sources[name]
+          root = pathlib.Path('acquisition')
+          archive = pathlib.Path('/tmp/public-gnss.zip')
+          report = {'dataset': name, 'source': source, 'requested_url': url,
+                    'purpose': 'data acquisition only; no training or performance claim',
+                    'started_unix_s': time.time(), 'download_success': False, 'files': []}
+          ok = False
+          try:
+              request = urllib.request.Request(url, headers={'User-Agent': 'RTKLIB-QR-public-research-data/1.0'})
+              h = hashlib.sha256(); n = 0
+              with urllib.request.urlopen(request, timeout=180) as response, archive.open('wb') as dst:
+                  report['http_status'] = response.status
+                  report['content_type'] = response.headers.get('Content-Type')
+                  while True:
+                      chunk = response.read(1024 * 1024)
+                      if not chunk: break
+                      n += len(chunk)
+                      if n > 8 * 1024**3: raise RuntimeError('archive exceeds declared 8 GiB transfer ceiling')
+                      h.update(chunk); dst.write(chunk)
+              report['archive_bytes'] = n; report['archive_sha256'] = h.hexdigest()
+              if not zipfile.is_zipfile(archive): raise RuntimeError('response is not a ZIP archive; no dataset claimed')
+              total = 0
+              with zipfile.ZipFile(archive) as z:
+                  report['archive_members'] = len(z.infolist())
+                  for entry in z.infolist():
+                      rel = pathlib.PurePosixPath(entry.filename)
+                      if entry.is_dir(): continue
+                      if rel.is_absolute() or '..' in rel.parts or '\\' in entry.filename:
+                          raise RuntimeError('unsafe archive member')
+                      if ((entry.external_attr >> 16) & 0o170000) == 0o120000:
+                          raise RuntimeError('archive symlink refused')
+                      basename = rel.name.lower()
+                      keep = basename.endswith(('.obs', '.nav', '.gnav', '.rnx', '.kml')) or basename in ('reference.csv', 'readme.md', 'readme.txt', 'license', 'license.txt')
+                      if not keep: continue
+                      total += entry.file_size
+                      if total > 3 * 1024**3: raise RuntimeError('selected inputs exceed 3 GiB extraction ceiling')
+                      target = root / 'files' / pathlib.Path(*rel.parts)
+                      target.parent.mkdir(parents=True, exist_ok=True)
+                      fh = hashlib.sha256(); count = 0
+                      with z.open(entry) as src, target.open('xb') as dst:
+                          while True:
+                              chunk = src.read(1024 * 1024)
+                              if not chunk: break
+                              count += len(chunk); fh.update(chunk); dst.write(chunk)
+                      report['files'].append({'path': str(target.relative_to(root)), 'bytes': count, 'sha256': fh.hexdigest()})
+              names = [x['path'].lower() for x in report['files']]
+              if not any(x.endswith('.obs') for x in names) or not any(x.endswith('reference.csv') for x in names):
+                  raise RuntimeError('archive did not contain both raw observations and reference.csv')
+              report['download_success'] = True; ok = True
+          except Exception as exc:
+              report['error_type'] = type(exc).__name__
+              report['error'] = str(exc)
+          finally:
+              report['finished_unix_s'] = time.time()
+              (root / 'ACQUISITION.json').write_text(json.dumps(report, indent=2)+'\n')
+              print(json.dumps({k:v for k,v in report.items() if k != 'files'}, indent=2))
+              print('selected_files', len(report['files']))
+          if not ok: sys.exit(1)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scl-public-data-${{ matrix.dataset }}
+          path: acquisition/
+          retention-days: 14
+          compression-level: 6
