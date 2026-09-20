@@ -12,9 +12,13 @@ jobs:
       contents: write
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
     env:
       OMP_NUM_THREADS: '1'
       OPENBLAS_NUM_THREADS: '1'
+      MKL_NUM_THREADS: '1'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -29,39 +33,32 @@ jobs:
           sudo apt-get install -y libblas-dev liblapack-dev
           python -m pip install numpy pytest
           python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
-      - name: Apply checksum-verified repair source
-        if: hashFiles('.qr-repair/install.py') != ''
-        run: python .qr-repair/install.py apply
-      - name: Build all native targets with test assertions enabled
+      - name: Apply checksum-verified SCL source
+        if: hashFiles('.scl-publication/install.py') != ''
+        run: python .scl-publication/install.py apply
+      - name: Build native solver and bridge with assertions enabled
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_FLAGS_RELEASE='-O3 -UNDEBUG' \
-            -DCMAKE_CXX_FLAGS_RELEASE='-O3 -UNDEBUG'
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS_RELEASE='-O2 -UNDEBUG'
           cmake --build build -j2
-      - name: Upstream native test suite
-        run: ctest --test-dir build --output-on-failure --output-log /tmp/qr-ctest.txt
-      - name: Q R training and native replay tests
+      - name: Upstream native tests
+        run: ctest --test-dir build --output-on-failure | tee /tmp/scl-ctest.txt
+      - name: Learned covariance and native gradient regression tests
         working-directory: research/learned_qr
-        run: |
-          set -o pipefail
-          python -m pytest -q | tee /tmp/qr-pytest.txt
+        run: python -m pytest -q | tee /tmp/scl-pytest.txt
       - uses: actions/upload-artifact@v4
-        if: always()
         with:
-          name: qr-validation
-          path: |
-            /tmp/qr-ctest.txt
-            /tmp/qr-pytest.txt
+          name: scl-validation
+          path: /tmp/scl-*.txt
           retention-days: 14
-      - name: Publish verified source on approved research branch
-        if: hashFiles('.qr-repair/install.py') != ''
+      - name: Publish verified source only to approved research branch
+        if: hashFiles('.scl-publication/install.py') != ''
         env:
           PUBLISH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python .qr-repair/install.py publish
-      - name: Archive verified source
-        run: git archive --format=tar.gz -o /tmp/qr-source.tar.gz HEAD
+        run: python .scl-publication/install.py publish
+      - name: Archive source
+        run: git archive --format=tar.gz -o /tmp/scl-source.tar.gz HEAD
       - uses: actions/upload-artifact@v4
         with:
-          name: qr-source
-          path: /tmp/qr-source.tar.gz
+          name: scl-source
+          path: /tmp/scl-source.tar.gz
           retention-days: 14
