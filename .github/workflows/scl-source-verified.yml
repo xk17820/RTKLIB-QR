@@ -27,6 +27,8 @@ jobs:
         with:
           python-version: '3.11'
       - run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y liblapack-dev libblas-dev
           python -m pip install --index-url https://download.pytorch.org/whl/cpu torch
           python -m pip install numpy pytest
       - name: Verify source preimages and materialize exact tested patch
