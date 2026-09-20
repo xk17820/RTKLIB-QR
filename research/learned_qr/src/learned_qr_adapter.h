@@ -227,11 +227,20 @@ static inline double qr_apply_r(rtk_t *rtk,int sat,int sys,double el,
     frq=f%nf;code=f>=nf;index=(sat-1)*2*NFREQ+code*NFREQ+frq;
     h=&c->r[index];t=qr_seconds(obs->time);
     signature=((unsigned)obs->code[frq]<<8)|(unsigned)baseobs->code[frq];
+    slip=((obs->LLI[frq]|baseobs->LLI[frq]|rtk->ssat[sat-1].slip[frq])&LLI_SLIP)!=0;
+    /* V3 GPS code features contain a BOTH-frequency MP combination. Its entire
+     * temporal window (not merely today's anchor) belongs to both signals.
+     * Preserve the single-frequency contract for legacy V1/V2 and phase. */
+    if(c->model.rpolicy>=2 && code && sys==SYS_GPS && frq<2) {
+        signature=((unsigned)obs->code[0]<<24)|((unsigned)obs->code[1]<<16)|
+                  ((unsigned)baseobs->code[0]<<8)|(unsigned)baseobs->code[1];
+        slip=((obs->LLI[0]|obs->LLI[1]|baseobs->LLI[0]|baseobs->LLI[1]|
+               rtk->ssat[sat-1].slip[0]|rtk->ssat[sat-1].slip[1])&LLI_SLIP)!=0;
+    }
     if(h->count && t==h->last_time && signature==h->signature && h->cached_valid) {
         qr_sd_event(c,sat,code*NFREQ+frq,native_variance,(c->mode&2)?h->cached[0]:1.0);
         return (c->mode&2)?native_variance*h->cached[0]:native_variance;
     }
-    slip=((obs->LLI[frq]|baseobs->LLI[frq]|rtk->ssat[sat-1].slip[frq])&LLI_SLIP)!=0;
     continuous=qr_history_continuous(h,t,signature,slip,c->model.max_gap);
     cn0=(snr_rover-40)/10.0;
     if(continuous) delta=cn0-h->values[(h->next+QR_WINDOW-1)%QR_WINDOW][0];

@@ -22,7 +22,7 @@ def sparse_pass(model,routes,args,*,optimizer=None):
       for route_index,r in enumerate(routes):
         ref=Reference.load(r['reference'],max_gap=r.get('reference_max_gap_s',args.reference_max_gap),time_offset=r.get('reference_time_offset_s',0))
         with Session(config=r.get('config',args.config),rover=r['rover'],base=r['base'],nav=r['nav'],model=file,
-          mode=args.mode,training=True,allow_test=True,max_gap=args.max_gap,pair_age=args.pair_age,library=args.library) as session:
+          mode=args.mode,training=True,allow_test=True,max_gap=args.max_gap,pair_age=args.pair_age,pairing_latency=getattr(args,"pairing_latency",None),library=args.library) as session:
           k=0;engine=None;losses=[];nll=[];last_time=None;since_start=0
           def flush():
             nonlocal steps,maxdx,maxdp

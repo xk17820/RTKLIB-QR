@@ -15,7 +15,7 @@ def native_validation(model,routes,args,path,*,baseline=False):
         errors=[];statuses=[];matches=[];available=[];n=fixed=0
         with Session(config=route.get('config',args.config),rover=route['rover'],base=route['base'],
             nav=route['nav'],model=None if baseline else path,mode='off' if baseline else args.mode,
-            training=False,allow_test=True,max_gap=args.max_gap,pair_age=args.pair_age,library=args.library) as sess:
+            training=False,allow_test=True,max_gap=args.max_gap,pair_age=args.pair_age,pairing_latency=getattr(args,"pairing_latency",None),library=args.library) as sess:
             while (r:=sess.step()) is not None:
                 n+=1;fixed+=int(r['status']==1)
                 ok=r['status']>0 and np.isfinite(r['position']).all()

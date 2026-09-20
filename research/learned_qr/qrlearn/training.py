@@ -63,7 +63,7 @@ def dataset_pass(model,routes,args,*,optimizer=None):
     for route in routes:
         reference=Reference.load(route['reference'],max_gap=float(route.get('reference_max_gap_s',args.reference_max_gap)),
                                  time_offset=float(route.get('reference_time_offset_s',0)))
-        engine=CompactTrace(model,args.mode) if getattr(args,'compact',False) or model.r_policy in ('scl','scl_blind') else TraceEngine(model,args.mode);losses=[];nlls=[]
+        engine=CompactTrace(model,args.mode) if getattr(args,'compact',False) or model.r_policy in ('scl','scl_blind','scl_unconstrained') else TraceEngine(model,args.mode);losses=[];nlls=[]
         def flush():
             nonlocal steps
             if training and losses:
@@ -82,7 +82,7 @@ def dataset_pass(model,routes,args,*,optimizer=None):
             else:engine.detach()
             losses.clear();nlls.clear()
         with Session(config=route.get('config',args.config),rover=route['rover'],base=route['base'],nav=route['nav'],
-                     mode=args.mode,training=True,max_gap=args.max_gap,pair_age=args.pair_age,library=args.library,scl=model.r_policy in ('scl','scl_blind'),
+                     mode=args.mode,training=True,max_gap=args.max_gap,pair_age=args.pair_age,pairing_latency=getattr(args,"pairing_latency",None),library=args.library,scl=model.r_policy in ('scl','scl_blind','scl_unconstrained'),
                      candidates=getattr(args,'conditional_weight',0)>0) as session:
             with torch.set_grad_enabled(training):
                 number=0

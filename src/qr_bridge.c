@@ -15,8 +15,9 @@ typedef struct {
     qr_model model;
     int mode,loaded,training,initialized,failed,first,stable,observe_candidates,observe_fixed,rpolicy;
     int *ri,*bi,nr,nb,cursor;
-    double max_gap,pair_age;
+    double max_gap,pair_age,pairing_latency;
     gtime_t previous;
+    FILE *feature_log; /* owned by the session, survives filter resets */
 } qr_session;
 
 static int qr_error(char *error,int size,const char *message)
@@ -39,7 +40,11 @@ static int qr_epoch_indices(const obs_t *obs,int **indices)
 static int qr_new_filter(qr_session *s)
 {
     qr_rtk_context *c;
-    if(s->initialized) rtkfree(&s->rtk);
+    if(s->initialized) {
+        qr_rtk_context *old=(qr_rtk_context*)s->rtk.learned_qr;
+        if(old && old->log==s->feature_log)old->log=NULL;
+        rtkfree(&s->rtk);
+    }
     rtkinit(&s->rtk,&s->opt);s->initialized=1;
     qr_rtk_destroy(s->rtk.learned_qr);s->rtk.learned_qr=NULL;
     c=(qr_rtk_context*)calloc(1,sizeof(*c));
@@ -49,7 +54,7 @@ static int qr_new_filter(qr_session *s)
     c->mode=s->mode;c->loaded=s->loaded;c->model=s->model;c->stable=s->stable;
     c->observe_candidates=s->observe_candidates;c->observe_fixed=s->observe_fixed;
     if(!s->loaded)c->model.rpolicy=s->rpolicy;
-    c->model.max_gap=s->max_gap;s->rtk.learned_qr=c;
+    c->model.max_gap=s->max_gap;c->log=s->feature_log;s->rtk.learned_qr=c;
     s->first=1;
     return 1;
 }
@@ -66,10 +71,37 @@ EXPORT int qr_set_stable(void *session,int enabled)
 EXPORT int qr_set_learning_options(void *session,int policy,int candidates,int fixed)
 {
     qr_session *s=(qr_session*)session;qr_rtk_context *c;
-    if(!s || policy<0 || policy>3 || s->cursor!=0)return -1;
+    if(!s || policy<0 || policy>4 || s->cursor!=0)return -1;
     s->rpolicy=policy;s->observe_candidates=candidates;s->observe_fixed=fixed;
     c=(qr_rtk_context*)s->rtk.learned_qr;c->observe_candidates=candidates;c->observe_fixed=fixed;
     if(!s->loaded)c->model.rpolicy=policy;
+    return 0;
+}
+/* Explicit timestamp alignment horizon, bounded by native DTTOL. Zero is strict causal.
+ * This is not an assertion about unknown network arrival latency. A negative
+ * base age requires delayed output until that base sample has been received. */
+EXPORT int qr_set_pairing_latency(void *session,double latency)
+{
+    qr_session *s=(qr_session*)session;
+    if(!s || s->cursor || !isfinite(latency) || latency<0. || latency>DTTOL || latency>s->pair_age)return -1;
+    s->pairing_latency=latency;return 0;
+}
+EXPORT double qr_get_pairing_latency(void *session)
+{
+    qr_session *s=(qr_session*)session;
+    return s?s->pairing_latency:NAN;
+}
+/* Optional read-only feature/scaling trace. Exclusive creation, never overwrite. */
+EXPORT int qr_set_feature_log(void *session,const char *path,char *error,int error_size)
+{
+    qr_session *s=(qr_session*)session;int j;FILE *f;
+    if(!s || s->cursor || s->failed || s->feature_log || !path || !*path)
+        return qr_error(error,error_size,"invalid feature-log session/path");
+    if(!(f=fopen(path,"wx")))return qr_error(error,error_size,"cannot exclusively create feature log");
+    fprintf(f,"kind,t_gpst_s,sat,channel,scale0,scale1");
+    for(j=0;j<QR_RDIM;j++)fprintf(f,",f%d",j);
+    fprintf(f,"\n");
+    s->feature_log=f;((qr_rtk_context*)s->rtk.learned_qr)->log=f;
     return 0;
 }
 /* Replace weights at an epoch boundary WITHOUT resetting the filter or history.
@@ -94,7 +126,12 @@ EXPORT void qr_close(void *session)
 {
     qr_session *s=(qr_session*)session;
     if(!s) return;
-    if(s->initialized) rtkfree(&s->rtk);
+    if(s->initialized) {
+        qr_rtk_context *old=(qr_rtk_context*)s->rtk.learned_qr;
+        if(old && old->log==s->feature_log)old->log=NULL;
+        rtkfree(&s->rtk);
+    }
+    if(s->feature_log)fclose(s->feature_log);
     freeobs(&s->rover);freeobs(&s->base);freenav(&s->nav,0xFF);
     free(s->ri);free(s->bi);free(s);
 }
@@ -141,7 +178,7 @@ EXPORT void *qr_open(const char *config,const char *rover,const char *base,
     if(s->opt.refpos!=POSOPT_POS_XYZ && s->opt.refpos!=POSOPT_POS_LLH && s->opt.refpos!=POSOPT_RINEX) {
         why="base position must be explicit LLH/XYZ or rinexhead";goto fail;
     }
-    s->stable=1;s->mode=mode;s->training=training;s->max_gap=max_gap;s->pair_age=pair_age;
+    s->stable=1;s->mode=mode;s->training=training;s->max_gap=max_gap;s->pair_age=pair_age;s->pairing_latency=fmin(DTTOL,pair_age);
     if(training) s->opt.modear=ARMODE_OFF; /* deployment config remains unchanged */
     if(model && *model) {
         if(!qr_load(&s->model,model,allow_test)) {why="invalid, untrained or incompatible model";goto fail;}
@@ -191,16 +228,23 @@ EXPORT int qr_step(void *session,qr_callback callback,void *user,char *error,int
     if(s->cursor>=s->nr) return 0;
     if(s->mode && !s->loaded && !callback) return qr_error(error,error_size,"Q/R mode requires a model or training callback");
     r0=s->ri[s->cursor];nr=s->ri[s->cursor+1]-r0;t=s->rover.data[r0].time;
+    /* Upper-bound pairing excludes future epochs beyond the explicit horizon.
+     * Zero horizon uses only timestamps <= rover; the native-tolerance alignment option
+     * accommodates receiver timestamp jitter and requires that much output lag.
+     * Native age remains signed and Python reports the required release time.
+     * Never substitute nearest-neighbour selection or change integer search.
+     */
     hi=s->nb;
     while(lo<hi) {
         mid=(lo+hi)/2;
-        if(timediff(s->base.data[s->bi[mid]].time,t)<0) lo=mid+1; else hi=mid;
+        if(timediff(s->base.data[s->bi[mid]].time,t)<=s->pairing_latency) lo=mid+1; else hi=mid;
     }
-    k=lo<s->nb?lo:s->nb-1;
-    if(k>0 && fabs(timediff(s->base.data[s->bi[k-1]].time,t))<
-              fabs(timediff(s->base.data[s->bi[k]].time,t))) k--;
-    b0=s->bi[k];nb=s->bi[k+1]-b0;
-    age=timediff(t,s->base.data[b0].time);valid_pair=fabs(age)<=s->pair_age+1e-9;
+    k=lo-1;b0=0;nb=0;age=NAN;valid_pair=0;
+    if(k>=0) {
+        b0=s->bi[k];nb=s->bi[k+1]-b0;
+        age=timediff(t,s->base.data[b0].time);
+        valid_pair=age>=-s->pairing_latency && fabs(age)<=s->pair_age+1e-9;
+    }
     if(nr>MAXOBS || nb>MAXOBS) {s->failed=1;return qr_error(error,error_size,"epoch exceeds compiled MAXOBS");}
     if(valid_pair && s->previous.time && timediff(t,s->previous)>s->max_gap) {
         if(!qr_new_filter(s)) {s->failed=1;return qr_error(error,error_size,"gap reset allocation failed");}

@@ -105,7 +105,7 @@ class CompactTrace:
             key=('q',) if k==5 else tuple(int(i) for i in array(e.ix,2))
             active=self.mode in (('q','qr') if k==5 else ('r','qr'))
             # Phase is exactly identity in SCL: avoid building unused NN graphs.
-            if k==6 and getattr(self.model,'r_policy','') in ('scl','scl_blind') and history[-1,3]<.5:active=False
+            if k==6 and getattr(self.model,'r_policy','') in ('scl','scl_blind','scl_unconstrained') and history[-1,3]<.5:active=False
             scale=(self.model.q if k==5 else self.model.r)(history) if active else self.const([1.]*e.m)
             if k==5:self.qscale=scale
             else:self.rscale[key]=scale[0]

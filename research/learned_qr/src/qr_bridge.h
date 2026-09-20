@@ -17,6 +17,9 @@ EXPORT void *qr_open(const char *config,const char *rover,const char *base,
 EXPORT int qr_step(void *session,qr_callback callback,void *user,
                    char *error,int error_size);
 EXPORT int qr_restart(void *session,char *error,int error_size);
+EXPORT double qr_get_pairing_latency(void *session);
+EXPORT int qr_set_pairing_latency(void *session,double latency);
+EXPORT int qr_set_feature_log(void *session,const char *path,char *error,int error_size);
 EXPORT void qr_close(void *session);
 #ifdef __cplusplus
 }

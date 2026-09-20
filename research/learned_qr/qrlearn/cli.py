@@ -33,7 +33,7 @@ def replay(args):
     if output.exists():raise FileExistsError(f'output already exists: {output}')
     output.parent.mkdir(parents=True,exist_ok=True);records=[]
     with Session(config=args.config,rover=args.rover,base=args.base,nav=args.nav,model=args.model,mode=args.mode,
-                 training=args.float,allow_test=args.allow_test_model,max_gap=args.max_gap,pair_age=args.pair_age,
+                 training=args.float,allow_test=args.allow_test_model,max_gap=args.max_gap,pair_age=args.pair_age,pairing_latency=getattr(args,"pairing_latency",None),
                  library=args.library,stable=not args.legacy) as session:
         while not args.max_epochs or len(records)<args.max_epochs:
             record=session.step()
@@ -109,7 +109,7 @@ def parser():
     t.add_argument('--huber-delta',type=float,default=1.,help='metres; zero selects squared loss')
     t.add_argument('--nll-weight',type=float,default=1e-3);t.add_argument('--reg-weight',type=float,default=1e-4)
     t.add_argument('--q-limit',type=float,default=10.);t.add_argument('--r-limit',type=float,default=1000.)
-    t.add_argument('--r-policy',choices=['code_guard','unconstrained','scl','scl_blind'],default='code_guard')
+    t.add_argument('--r-policy',choices=['code_guard','unconstrained','scl','scl_blind','scl_unconstrained'],default='code_guard')
     t.add_argument('--conditional-weight',type=float,default=0.)
     t.add_argument('--smooth-weight',type=float,default=0.)
     t.add_argument('--gradient-stride',type=int,default=1)
@@ -151,6 +151,7 @@ def parser():
     for command in (t,r):
         command.add_argument('--library',help='explicit rebuilt shared RTKLIB path')
         command.add_argument('--max-gap',type=float,default=30.,help='seconds; must match exported model')
+        command.add_argument('--pairing-latency',type=float,default=None,help='timestamp alignment horizon <= native DTTOL; default native tolerance, zero strict past-only; delayed output required otherwise')
         command.add_argument('--pair-age',type=float,default=.05,help='maximum rover/base timestamp difference')
     for command in (t,r,e):command.add_argument('--reference-max-gap',type=float,default=1.,help='maximum interpolation gap, seconds')
     for command in (r,e):

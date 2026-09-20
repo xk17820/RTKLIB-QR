@@ -46,7 +46,8 @@ def library_path(value=None)->Path:
 
 class Session:
     def __init__(self,*,config,rover,base,nav,model=None,mode='off',training=True,
-                 allow_test=False,max_gap=30.0,pair_age=0.05,library=None,stable=True,scl=False,candidates=False,observe_fixed=False):
+                 allow_test=False,max_gap=30.0,pair_age=0.05,library=None,stable=True,scl=False,candidates=False,observe_fixed=False,feature_log=None,pairing_latency=None):
+        if feature_log is not None and Path(feature_log).exists():raise FileExistsError(feature_log)
         if mode not in MODES:raise ValueError('mode must be off/q/r/qr')
         if not stable and (training or mode!='off'):raise ValueError('legacy update is available only for non-learning replay')
         if not nav:raise ValueError('at least one navigation file is required')
@@ -73,6 +74,14 @@ class Session:
                 os.fsencode(Path(model).resolve()) if model is not None else None,
                 MODES[mode],int(training),int(allow_test),max_gap,pair_age,error,len(error))
         if not self.ptr:raise RuntimeError(error.value.decode('utf-8',errors='replace'))
+        if not hasattr(self.lib,'qr_set_pairing_latency'):
+            self.close();raise RuntimeError('rebuild native library for explicit pairing horizon')
+        self.lib.qr_get_pairing_latency.argtypes=[c.c_void_p]
+        self.lib.qr_get_pairing_latency.restype=c.c_double
+        self.timestamp_horizon=float(self.lib.qr_get_pairing_latency(self.ptr) if pairing_latency is None else pairing_latency)
+        self.lib.qr_set_pairing_latency.argtypes=[c.c_void_p,c.c_double]
+        if self.lib.qr_set_pairing_latency(self.ptr,self.timestamp_horizon):
+            self.close();raise ValueError('pairing latency must be finite, nonnegative, <= native DTTOL and <= pair_age')
         if scl or candidates or observe_fixed:
             if not hasattr(self.lib,'qr_set_learning_options'):
                 self.close();raise RuntimeError('rebuild library with SCL observer')
@@ -81,6 +90,13 @@ class Session:
                 self.close();raise RuntimeError('invalid SCL options')
         if self.lib.qr_set_stable(self.ptr,int(stable)):
             self.close();raise RuntimeError('unsupported numerical update mode')
+        if feature_log is not None:
+            p=Path(feature_log).expanduser().resolve();p.parent.mkdir(parents=True,exist_ok=True)
+            if not hasattr(self.lib,'qr_set_feature_log'):
+                self.close();raise RuntimeError('rebuild native library for read-only feature logging')
+            self.lib.qr_set_feature_log.argtypes=[c.c_void_p,c.c_char_p,c.c_char_p,c.c_int]
+            if self.lib.qr_set_feature_log(self.ptr,os.fsencode(p),error,len(error)):
+                self.close();raise RuntimeError(error.value.decode('utf-8',errors='replace'))
 
     def step(self,handler=None):
         if not self.ptr or self.failed:raise RuntimeError('session closed or failed; restart before reuse')
@@ -96,7 +112,9 @@ class Session:
                     meta=array(e.b,4)
                     output.update(time=e.time,status=e.n,ns=e.m,
                         position=array(e.a,6)[:3] if e.n else np.full(3,np.nan),
-                        ratio=float(meta[0]),age=float(meta[1]),native_return=int(meta[2]))
+                        ratio=float(meta[0]),age=float(meta[1]),native_return=int(meta[2]),
+                        release_t_gpst_s=e.time+max(0.,-float(meta[1])) if np.isfinite(meta[1]) else e.time,
+                        timestamp_horizon_s=self.timestamp_horizon)
                 return 0
             except BaseException as exc:
                 caught.append(exc);return 1
