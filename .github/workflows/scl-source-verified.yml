@@ -1,0 +1,103 @@
+name: SCL verified ordinary source publication
+on:
+  push:
+    branches: [research/learned-qr]
+    paths: ['.github/workflows/scl-source-verified.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: scl-source-materialization
+  cancel-in-progress: false
+jobs:
+  verify-and-publish:
+    if: github.repository == 'xk17820/RTKLIB-QR' && github.ref == 'refs/heads/research/learned-qr'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OMP_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      MKL_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: |
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu torch
+          python -m pip install numpy pytest
+      - name: Verify source preimages and materialize exact tested patch
+        run: |
+          mkdir -p publication-evidence
+          python - <<'PY'
+          import base64, hashlib, json, lzma, pathlib, subprocess
+          root=pathlib.Path('research/learned_qr/handoff/2026-09-21/source-transfer')
+          raw=base64.b64decode(''.join((root/f'part{i}.b64').read_text() for i in range(2)),validate=True)
+          assert hashlib.sha256(raw).hexdigest()=='fe036be1f3b2ba47bb5f9e3f581bbb7355d42573d2d94e62a404f903a8d5b594'
+          obj=json.loads(lzma.decompress(raw)); files=obj['files']; assert len(files)==26
+          allowed=set()
+          for x in files:
+              p=pathlib.Path(x['path']); assert not p.is_absolute() and '..' not in p.parts
+              assert str(p).startswith(('src/learned_qr','src/qr_bridge','research/learned_qr/qrlearn/','research/learned_qr/src/','research/learned_qr/tests/'))
+              assert str(p) not in allowed; allowed.add(str(p))
+              if x['before_blob'] is None: assert not p.exists(), str(p)+' already exists'
+              else:
+                  b=p.read_bytes(); got=hashlib.sha1(b'blob '+str(len(b)).encode()+b'\0'+b).hexdigest()
+                  assert got==x['before_blob'], str(p)+' preimage changed; refuse concurrent overwrite'
+          patch=pathlib.Path('publication-evidence/source.patch');patch.write_text(obj['patch'])
+          paths={line.split(' b/',1)[1] for line in obj['patch'].splitlines() if line.startswith('diff --git ')}
+          assert paths==allowed
+          subprocess.run(['git','apply','--check',str(patch)],check=True)
+          subprocess.run(['git','apply',str(patch)],check=True)
+          for x in files: assert hashlib.sha256(pathlib.Path(x['path']).read_bytes()).hexdigest()==x['after_sha256'],x['path']
+          pathlib.Path('publication-evidence/source-manifest.json').write_text(json.dumps(files,indent=2)+'\n')
+          pathlib.Path('publication-evidence/paths.txt').write_text('\n'.join(sorted(allowed))+'\n')
+          for p in ['src/rtkpos.c','src/lambda.c','src/rtkcmn.c']:
+              assert subprocess.check_output(['git','diff','--',p])==b''
+          print('26 exact source files materialized; original AR/numerical core unchanged')
+          PY
+      - name: Native assertions-enabled build and complete tests
+        run: |
+          set -o pipefail
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS_RELEASE='-O2 -UNDEBUG' -DCMAKE_CXX_FLAGS_RELEASE='-O2 -UNDEBUG' 2>&1 | tee publication-evidence/cmake.txt
+          cmake --build build -j2 2>&1 | tee publication-evidence/build.txt
+          ctest --test-dir build --output-on-failure 2>&1 | tee publication-evidence/ctest.txt
+          cd research/learned_qr
+          python -m pytest -q 2>&1 | tee ../../publication-evidence/pytest.txt
+      - name: Publish normal source commit on research branch only after verification
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          python - <<'PY'
+          import hashlib,json,os,pathlib,subprocess,time
+          def git(*args):return subprocess.check_output(['git',*args],text=True).strip()
+          branch='research/learned-qr'; expected=os.environ['EXPECTED_HEAD']
+          subprocess.run(['git','fetch','origin',branch,'main'],check=True)
+          assert git('rev-parse','refs/remotes/origin/'+branch)==expected,'Research branch advanced; refuse overwrite'
+          main=git('rev-parse','refs/remotes/origin/main')
+          assert main=='06e8644287ff07efc4c53bbf3e7f9dafb0355605','Main changed externally; stop for review'
+          files=json.loads(pathlib.Path('publication-evidence/source-manifest.json').read_text())
+          for x in files:assert hashlib.sha256(pathlib.Path(x['path']).read_bytes()).hexdigest()==x['after_sha256']
+          paths=[x['path'] for x in files]
+          subprocess.run(['git','config','user.name','SCL research verification'],check=True)
+          subprocess.run(['git','config','user.email','68806984+xk17820@users.noreply.github.com'],check=True)
+          subprocess.run(['git','add','--',*paths],check=True)
+          assert set(git('diff','--cached','--name-only').splitlines())==set(paths)
+          subprocess.run(['git','commit','-m','research: verified identity gradients, timestamp horizon, causal history and public-study interfaces'],check=True)
+          commit=git('rev-parse','HEAD')
+          subprocess.run(['git','push','origin','HEAD:refs/heads/'+branch],check=True)
+          assert git('ls-remote','origin','refs/heads/main').split()[0]==main
+          status={'source_materialized':True,'ordinary_source_commit':commit,'parent':expected,'run_id':os.environ['RUN_ID'],'main_unchanged':main,'verification':'complete CTest and pytest passed in this run; not a performance approval','finished_unix_s':time.time()}
+          pathlib.Path('publication-evidence/STATUS.json').write_text(json.dumps(status,indent=2)+'\n')
+          print(json.dumps(status,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scl-source-publication-evidence
+          path: publication-evidence/
+          retention-days: 30
